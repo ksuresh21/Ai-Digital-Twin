@@ -1,0 +1,85 @@
+import Foundation
+
+/// The animation clips the app asks for by name.
+///
+/// The spec listed seven "animation states" including `glasses_on` and
+/// `glasses_off`. Those two are not states -- glasses are orthogonal to what the
+/// character is *doing*, so modelling them as states would require an idle,
+/// walk, wave, drink and eye-break variant of each, i.e. twice the clips for one
+/// boolean. They are handled instead as a *variant suffix* on any clip
+/// (`idle_glasses`), resolved with a fallback to the base clip, so a character
+/// pack that ships no glasses art simply never wears them.
+public enum ClipName {
+    public static let idle = "idle"
+    public static let walk = "walk"
+    public static let wave = "wave"
+    public static let waterReminder = "drink"
+    public static let eyeBreak = "eyebreak"
+    public static let sleep = "sleep"
+    public static let happy = "happy"
+    /// Sitting and reading, for focus sessions. Near-static by design.
+    public static let focus = "focus"
+    /// A standing stretch, for posture reminders.
+    public static let stretch = "stretch"
+    /// Worried. Shown after a long stretch with no break, or repeated skips.
+    public static let concerned = "concerned"
+    /// A bigger celebration than `happy`, for streak milestones.
+    public static let cheer = "cheer"
+    /// Half-hidden at the screen edge. The pose for idle chatter.
+    public static let peek = "peek"
+    /// Yawning, for late nights and very long sessions.
+    public static let yawn = "yawn"
+
+    /// Clips whose absence is worth reporting in Settings.
+    ///
+    /// `focus` and `stretch` are registered in `ClipDefinition.standard` so a
+    /// pack containing them loads them, but they are left out here: the
+    /// features that use them are not built yet, and nagging about art for a
+    /// feature that does not exist is just noise.
+    public static let all: [String] = [idle, walk, wave, waterReminder, eyeBreak, sleep, happy]
+
+    /// Everything the loader knows how to read, including not-yet-used clips.
+    public static let loadable: [String] = all + [focus, stretch, concerned, cheer, peek, yawn]
+
+    /// The glasses-wearing variant of a clip name.
+    public static func glassesVariant(of clip: String) -> String { "\(clip)_glasses" }
+}
+
+/// Where a clip's frames live on disk and how they are named.
+///
+/// One definition per clip means adding an animation is a one-line change here
+/// plus a folder of PNGs -- no code in the animation engine changes.
+public struct ClipDefinition: Equatable, Sendable {
+    public let name: String
+    /// Sub-folder inside the character pack.
+    public let folder: String
+    /// Frame filename prefix, e.g. `walk` for `walk_01.png`.
+    public let filePrefix: String
+    /// Looping clips repeat forever; one-shot clips hold on their last frame and
+    /// report `isFinished`, which is how the state machine knows a wave is over.
+    public let loops: Bool
+
+    public init(name: String, folder: String, filePrefix: String, loops: Bool) {
+        self.name = name
+        self.folder = folder
+        self.filePrefix = filePrefix
+        self.loops = loops
+    }
+
+    /// The clip catalogue for a character pack. Folder names match Docs/ASSETS.md.
+    public static let standard: [ClipDefinition] = [
+        ClipDefinition(name: ClipName.idle,           folder: "Idle",           filePrefix: "idle",     loops: true),
+        ClipDefinition(name: ClipName.walk,           folder: "Walking",        filePrefix: "walk",     loops: true),
+        ClipDefinition(name: ClipName.wave,           folder: "Waving",         filePrefix: "wave",     loops: false),
+        ClipDefinition(name: ClipName.waterReminder,  folder: "WaterReminder",  filePrefix: "drink",    loops: true),
+        ClipDefinition(name: ClipName.eyeBreak,       folder: "EyeBreak",       filePrefix: "eyebreak", loops: true),
+        ClipDefinition(name: ClipName.sleep,          folder: "Sleep",          filePrefix: "sleep",    loops: true),
+        ClipDefinition(name: ClipName.happy,          folder: "HappyMood",      filePrefix: "happy",    loops: false),
+        ClipDefinition(name: ClipName.focus,          folder: "Focus",          filePrefix: "focus",    loops: true),
+        ClipDefinition(name: ClipName.stretch,        folder: "Stretch",        filePrefix: "stretch",  loops: true),
+        ClipDefinition(name: ClipName.concerned,      folder: "Concerned",      filePrefix: "concerned", loops: true),
+        ClipDefinition(name: ClipName.cheer,          folder: "Cheer",          filePrefix: "cheer",    loops: false),
+        ClipDefinition(name: ClipName.peek,           folder: "Peek",           filePrefix: "peek",     loops: true),
+        ClipDefinition(name: ClipName.yawn,           folder: "Yawn",           filePrefix: "yawn",     loops: false),
+    ]
+}

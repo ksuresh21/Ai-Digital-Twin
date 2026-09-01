@@ -24,14 +24,34 @@ public final class SettingsViewModel: ObservableObject {
     /// Set when macOS refuses a login-item change, which usually means the user
     /// has to approve it in System Settings.
     @Published public var loginItemWarning: String?
+    @Published public var isDropTargeted: Bool = false
+    /// What happened to the last import, shown under the drop zone.
+    @Published public var importStatus: String?
     /// The current character's colours, so the style previews look like the
     /// real thing rather than a generic swatch.
     @Published public var palette: CharacterPalette = .fallback
+    /// Clips the current pack provides, for the mood test buttons.
+    @Published public var availableClips: [String] = []
+    @Published public var activityLog: ActivityLog = ActivityLog()
+    @Published public var currentStreak: Int = 0
+    @Published public var bestStreak: Int = 0
 
     public var onChange: ((AiTwinSettings) -> Void)?
     public var onRevealPacksFolder: (() -> Void)?
     public var onReloadPacks: (() -> Void)?
     public var onTestReminder: ((ReminderKind) -> Void)?
+    /// Plays one clip on demand so new artwork can be checked.
+    public var onPreviewClip: ((String) -> Void)?
+    public var onStartFocus: (() -> Void)?
+    /// Saves the recorded history to a file the user picks.
+    public var onExportHistory: (() -> Void)?
+    /// Installs a pack from a dropped zip or folder.
+    public var onImportPack: ((URL) -> Void)?
+    public var onBrowseForPack: (() -> Void)?
+    /// Plays a whole routine, for checking a behaviour end to end.
+    public var onPreviewSequence: ((String) -> Void)?
+    public var onLoadSampleData: (() -> Void)?
+    public var onClearHistory: (() -> Void)?
 
     public init(settings: AiTwinSettings) {
         self.settings = settings

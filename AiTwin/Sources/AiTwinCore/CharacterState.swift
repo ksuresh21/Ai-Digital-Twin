@@ -6,6 +6,17 @@ public enum SummonPurpose: Equatable, Sendable {
     case reminder(ReminderKind)
     /// Popping out to celebrate — currently only when the daily water goal is met.
     case celebration
+    /// Showing one named clip on demand, for testing from Settings.
+    case preview(String)
+    /// Playing a whole routine on demand, so a behaviour can be checked end to
+    /// end rather than one pose at a time.
+    case previewSequence(String)
+    /// An unprompted line. Uses the peeking pose, so she does not walk in.
+    case chatter
+    /// Sitting down to work alongside you for a focus session.
+    case focus
+    /// Showing how she feels about how the day is going.
+    case mood(MoodMonitor.Mood)
 
     /// How the character arrives on screen for this purpose.
     ///
@@ -16,8 +27,11 @@ public enum SummonPurpose: Equatable, Sendable {
     /// over to tell you something.
     public var entrance: Entrance {
         switch self {
-        case .greeting, .celebration: return .pop
-        case .reminder:               return .walk
+        case .greeting, .celebration, .preview, .previewSequence, .chatter, .focus: return .pop
+        case .reminder:                                           return .walk
+        // Concern is an errand -- she comes over to say it, the same as a
+        // reminder. Sleepiness is not; she just appears, tired.
+        case .mood(let mood):                                     return mood == .concerned ? .walk : .pop
         }
     }
 }
@@ -49,6 +63,18 @@ public enum CharacterState: Equatable, Sendable {
     case celebrating
     /// Waiting out a timed eye break while the screen is dimmed.
     case onBreak
+    /// Showing one clip on demand so it can be checked from Settings.
+    case previewing(clip: String)
+    /// Playing a whole routine on demand.
+    case previewingSequence(name: String)
+    /// Peeking in to say something unprompted.
+    case chattering
+    /// Sitting and reading through a focus session. Near-motionless by design.
+    case focusing
+    /// Expressing concern, or looking sleepy.
+    case feeling(MoodMonitor.Mood)
+    /// Dozed off. Follows a yawn at night, and stays until something happens.
+    case sleeping
     /// Standing at the corner with a speech bubble up.
     case reminding(ReminderKind)
     /// Standing at the corner, no bubble.
@@ -76,6 +102,13 @@ public enum CharacterState: Equatable, Sendable {
         case .entering:          return ClipName.walk
         case .appearing:         return ClipName.wave
         case .onBreak:           return ClipName.eyeBreak
+        case .previewing(let c):  return c
+        case .previewingSequence(let name):
+            return ClipSequence.named(name)?.clips.first ?? ClipName.idle
+        case .chattering:        return ClipName.peek
+        case .focusing:          return ClipName.focus
+        case .feeling(let mood): return mood.clipName
+        case .sleeping:          return ClipName.sleep
         case .leaving:           return ClipName.walk
         case .greeting:          return ClipName.wave
         case .celebrating:       return ClipName.happy
@@ -98,6 +131,10 @@ public enum CharacterEvent: Equatable, Sendable {
     case breakStarted
     /// The eye-break countdown ran out, or was skipped.
     case breakFinished
+    /// The focus session ended.
+    case focusFinished
+    /// The yawn finished and it is late: she settles down to sleep.
+    case fellAsleep
     /// The character has been standing around long enough; send it away.
     case restTimeout
     /// The walk-out finished and the character is off screen.
@@ -144,6 +181,11 @@ public final class CharacterStateMachine {
         case (.idle, .summon(.reminder(let kind))),
              (.greeting, .summon(.reminder(let kind))),
              (.celebrating, .summon(.reminder(let kind))),
+             (.previewing, .summon(.reminder(let kind))),
+             (.previewingSequence, .summon(.reminder(let kind))),
+             (.chattering, .summon(.reminder(let kind))),
+             (.feeling, .summon(.reminder(let kind))),
+             (.sleeping, .summon(.reminder(let kind))),
              (.appearing, .summon(.reminder(let kind))),
              (.reminding, .summon(.reminder(let kind))):
             return .reminding(kind)
@@ -153,14 +195,41 @@ public final class CharacterStateMachine {
              (.greeting, .summon(.celebration)):
             return .celebrating
 
+        case (.previewing, .summon(.preview(let clip))),
+             (.previewingSequence, .summon(.preview(let clip))),
+             (.idle, .summon(.preview(let clip))):
+            return .previewing(clip: clip)
+
+        // Starting a focus session while she is already on screen sits her
+        // down where she stands, rather than doing nothing at all.
+        case (.idle, .summon(.focus)),
+             (.greeting, .summon(.focus)),
+             (.celebrating, .summon(.focus)),
+             (.chattering, .summon(.focus)),
+             (.feeling, .summon(.focus)),
+             (.sleeping, .summon(.focus)),
+             (.previewing, .summon(.focus)),
+             (.previewingSequence, .summon(.focus)):
+            return .focusing
+
+        case (.previewing, .summon(.previewSequence(let name))),
+             (.previewingSequence, .summon(.previewSequence(let name))),
+             (.idle, .summon(.previewSequence(let name))):
+            return .previewingSequence(name: name)
+
         case (.leaving, .summon(let purpose)):
-            return .entering(purpose)
+            return purpose.entrance == .pop ? .appearing(purpose) : .entering(purpose)
 
         case (.entering(let purpose), .arrivedAtCorner),
              (.appearing(let purpose), .arrivedAtCorner):
             switch purpose {
             case .greeting:          return .greeting
             case .celebration:       return .celebrating
+            case .preview(let clip): return .previewing(clip: clip)
+            case .previewSequence(let name): return .previewingSequence(name: name)
+            case .chatter:           return .chattering
+            case .focus:             return .focusing
+            case .mood(let mood):    return .feeling(mood)
             case .reminder(let k):   return .reminding(k)
             }
 
@@ -168,18 +237,46 @@ public final class CharacterStateMachine {
              (.celebrating, .animationFinished):
             return .idle
 
+        case (.reminding, .summon(.celebration)):
+            return .celebrating
+
         case (.reminding(.eyeBreak), .breakStarted):
             return .onBreak
 
         case (.onBreak, .breakFinished):
             return .leaving
 
+        // Focus outranks a *timer*, but not a deliberate summon: the session's
+        // own break has to be able to get her out of the chair, and a held
+        // reminder released at the break must be able to reach her.
+        case (.focusing, .focusFinished):
+            return .leaving
+
+        case (.focusing, .summon(.celebration)),
+             (.feeling(.concerned), .summon(.celebration)):
+            return .celebrating
+
+        case (.focusing, .summon(.reminder(let kind))):
+            return .reminding(kind)
+
         case (.reminding, .reminderResolved):
             return .leaving
 
         case (.idle, .restTimeout),
              (.celebrating, .restTimeout),
-             (.onBreak, .restTimeout):
+             (.onBreak, .restTimeout),
+             (.previewing, .restTimeout),
+             (.previewingSequence, .restTimeout),
+             (.chattering, .restTimeout),
+             (.feeling(.concerned), .restTimeout),
+             (.sleeping, .restTimeout):
+            return .leaving
+
+        // A yawn at night settles into sleep instead of walking off.
+        case (.feeling(.sleepy), .fellAsleep):
+            return .sleeping
+
+        case (.feeling(.sleepy), .restTimeout):
             return .leaving
 
         case (.leaving, .exitedScreen):

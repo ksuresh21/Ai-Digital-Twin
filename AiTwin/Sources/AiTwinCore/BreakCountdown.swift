@@ -39,6 +39,17 @@ public struct BreakCountdown: Equatable, Sendable {
         Int(remaining(at: now).rounded(.up))
     }
 
+    /// "1:00" -- the countdown shown across the dimmed screen. Same format as
+    /// a focus session's clock, so the two never look like different features.
+    public func clockText(at now: Date) -> String {
+        let total = secondsRemaining(at: now)
+        return String(format: "%d:%02d", total / 60, total % 60)
+    }
+
+    /// Printed under the big countdown. The dimmed screen has to say *why* it
+    /// went dark, or the first reaction is that something broke.
+    public static let overlayCaption = "Look away — rest your eyes"
+
     /// The choices offered in Settings. A minute is the default: long enough
     /// that your eyes actually refocus on something distant, short enough that
     /// it does not feel like being sent out of the room.

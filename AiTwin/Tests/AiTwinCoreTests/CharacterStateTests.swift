@@ -494,13 +494,13 @@ struct MessagePoolTests {
     func templatesExpandCleanly() {
         for pool in MessageCatalog.allPools {
             for template in MessageCatalog.usable(pool.templates, hasName: false) {
-                let filled = MessageCatalog.fill(template, name: "")
+                let filled = MessageCatalog.fill(template, name: "", days: 7)
                 #expect(!filled.contains("{"))
                 #expect(!filled.contains(" ,"))
                 #expect(!filled.hasPrefix(","))
             }
             for template in pool.templates {
-                let filled = MessageCatalog.fill(template, name: "Suresh")
+                let filled = MessageCatalog.fill(template, name: "Suresh", days: 7)
                 #expect(!filled.contains("{"))
             }
         }
@@ -542,7 +542,7 @@ struct MessagePoolTests {
     func messagesAreShort() {
         for pool in MessageCatalog.allPools {
             for template in pool.templates {
-                let filled = MessageCatalog.fill(template, name: "Suresh")
+                let filled = MessageCatalog.fill(template, name: "Suresh", days: 30)
                 #expect(filled.count <= 34, "too long: \(filled)")
             }
         }
@@ -610,6 +610,48 @@ struct EntranceAndBreakTests {
         machine.handle(.breakStarted)
         machine.handle(.breakFinished)
         #expect(machine.state == .leaving)
+    }
+
+    // The eye break was silently dead for a whole build because of the two
+    // rejections below. `acknowledge` reported the reminder as resolved before
+    // the break was started, so by the time .breakStarted arrived she was
+    // already .leaving and the break never began: no dimming, no countdown.
+    @Test("a resolved reminder can no longer start a break")
+    func resolvedReminderCannotStartBreak() {
+        let machine = CharacterStateMachine()
+        machine.handle(.summon(.reminder(.eyeBreak)))
+        machine.handle(.arrivedAtCorner)
+        machine.handle(.reminderResolved)
+        #expect(machine.state == .leaving)
+        machine.handle(.breakStarted)
+        #expect(machine.state == .leaving, "the break must be entered before the reminder is resolved")
+    }
+
+    @Test("resolving the reminder afterwards does not cut the break short")
+    func resolveDuringBreakIsIgnored() {
+        let machine = CharacterStateMachine()
+        machine.handle(.summon(.reminder(.eyeBreak)))
+        machine.handle(.arrivedAtCorner)
+        machine.handle(.breakStarted)
+        machine.handle(.reminderResolved)
+        #expect(machine.state == .onBreak)
+    }
+
+    @Test("the break countdown reads as a clock")
+    func countdownClockText() {
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let countdown = BreakCountdown(duration: 60, startedAt: start)
+        #expect(countdown.clockText(at: start) == "1:00")
+        #expect(countdown.clockText(at: start.addingTimeInterval(1)) == "0:59")
+        #expect(countdown.clockText(at: start.addingTimeInterval(51)) == "0:09")
+        #expect(countdown.clockText(at: start.addingTimeInterval(60)) == "0:00")
+        // Past the end it holds at zero rather than counting into negatives.
+        #expect(countdown.clockText(at: start.addingTimeInterval(90)) == "0:00")
+    }
+
+    @Test("the dimmed screen explains itself")
+    func overlayCaptionExists() {
+        #expect(BreakCountdown.overlayCaption.isEmpty == false)
     }
 
     @Test("the countdown reports time left and finishes")

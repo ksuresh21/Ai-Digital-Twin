@@ -32,14 +32,17 @@ public struct WaterLog: Codable, Equatable, Sendable {
         glasses = max(0, glasses + count)
     }
 
-    public func hasReachedGoal(_ goal: Int) -> Bool {
-        goal > 0 && glasses >= goal
+    public func hasReachedGoal(_ intake: WaterIntake) -> Bool {
+        intake.hasReachedGoal(glasses: glasses)
+    }
+
+    public func millilitres(_ intake: WaterIntake) -> Int {
+        intake.millilitres(forGlasses: glasses)
     }
 
     /// 0...1, clamped so an over-achiever does not overflow a progress bar.
-    public func progress(goal: Int) -> Double {
-        guard goal > 0 else { return 0 }
-        return min(1, Double(glasses) / Double(goal))
+    public func progress(_ intake: WaterIntake) -> Double {
+        intake.progress(glasses: glasses)
     }
 }
 

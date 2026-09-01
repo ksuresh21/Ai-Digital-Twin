@@ -13,9 +13,26 @@ public struct CharacterPack: Equatable, Sendable {
     /// Clip name -> clip. May be missing entries; resolution handles that.
     public let clips: [String: AnimationClip]
 
-    public init(name: String, clips: [String: AnimationClip]) {
+    /// How much of each frame's height the standing character actually fills.
+    ///
+    /// Frames carry padding above the character so that poses reaching higher
+    /// than standing -- arms overhead, a jump -- are not cut off. If the app
+    /// scaled frames by their full height, that padding would shrink the
+    /// character in every clip. Scaling by this fraction instead keeps her the
+    /// same size no matter how much headroom the canvas needs.
+    ///
+    /// 1.0 for a pack with no manifest, which is the old behaviour.
+    public let characterHeightFraction: Double
+
+    public init(name: String, clips: [String: AnimationClip], characterHeightFraction: Double = 1) {
         self.name = name
         self.clips = clips
+        self.characterHeightFraction = min(1, max(0.1, characterHeightFraction))
+    }
+
+    /// The frame height needed for the character to measure `characterHeight`.
+    public func frameHeight(forCharacterHeight characterHeight: Double) -> Double {
+        characterHeight / characterHeightFraction
     }
 
     /// A pack is usable if it can draw the character standing still. Everything
@@ -34,19 +51,11 @@ public struct CharacterPack: Equatable, Sendable {
 
     /// Resolves a request for a clip, degrading rather than failing.
     ///
-    /// Order: the glasses variant if glasses are on and the art exists, then the
-    /// plain clip, then idle. Returning idle for a missing `drink` clip means a
-    /// half-finished character pack still produces a working reminder -- the
-    /// character just stands there instead of crashing the app, which is exactly
-    /// what Section 16 asks for.
-    public func resolveClip(named name: String, wearingGlasses: Bool) -> AnimationClip? {
-        if wearingGlasses, let variant = nonEmptyClip(ClipName.glassesVariant(of: name)) {
-            return variant
-        }
-        if let exact = nonEmptyClip(name) {
-            return exact
-        }
-        return nonEmptyClip(ClipName.idle)
+    /// Falls back to idle when a clip is absent, so a half-finished character
+    /// pack still produces a working reminder -- she just stands there instead
+    /// of the app failing.
+    public func resolveClip(named name: String) -> AnimationClip? {
+        nonEmptyClip(name) ?? nonEmptyClip(ClipName.idle)
     }
 
     private func nonEmptyClip(_ name: String) -> AnimationClip? {

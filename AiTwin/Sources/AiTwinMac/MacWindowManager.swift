@@ -34,6 +34,9 @@ public final class MacWindowManager: NSObject, WindowManaging {
         panel.contentView = view
     }
 
+    /// Exposed for tests: whether clicks currently pass through.
+    var ignoresMouseEventsForTesting: Bool { panel.ignoresMouseEvents }
+
     public var currentOrigin: GPoint {
         GPoint(x: panel.frame.origin.x, y: panel.frame.origin.y)
     }
@@ -50,8 +53,31 @@ public final class MacWindowManager: NSObject, WindowManaging {
         panel.orderOut(nil)
     }
 
+    /// Jumps the window somewhere, abandoning any walk in progress.
+    ///
+    /// Cancelling matters: without it, setting a position during a walk-out left
+    /// the movement timer running, so anything summoned mid-exit -- a preview, a
+    /// reminder -- was dragged off screen and looked like it had not worked.
+    ///
+    /// The cancel and the move are kept in *separate* methods on purpose. The
+    /// walk's own per-frame update must not cancel the walk it belongs to, which
+    /// is exactly what happened when this cancelled and the animation called it:
+    /// the first tick killed the timer and she froze two pixels from where she
+    /// started.
     public func setPosition(_ origin: GPoint) {
+        cancelMove()
+        applyOrigin(origin)
+    }
+
+    /// Moves the window without touching the animation timer. Used by the walk
+    /// itself, and by nothing else.
+    private func applyOrigin(_ origin: GPoint) {
         panel.setFrameOrigin(NSPoint(x: origin.x, y: origin.y))
+    }
+
+    /// Stops a walk without moving the window, leaving it where it is.
+    public func stopMoving() {
+        cancelMove()
     }
 
     public func setSize(_ size: GSize) {
@@ -102,7 +128,8 @@ public final class MacWindowManager: NSObject, WindowManaging {
         // animation runs at a constant rate.
         let x = moveStart.x + (moveEnd.x - moveStart.x) * progress
         let y = moveStart.y + (moveEnd.y - moveStart.y) * progress
-        setPosition(GPoint(x: x, y: y))
+        // applyOrigin, never setPosition: setPosition cancels the walk.
+        applyOrigin(GPoint(x: x, y: y))
 
         if progress >= 1 {
             let completion = moveCompletion

@@ -34,7 +34,7 @@ struct FrameDiscoveryTests {
                 == ["walk_01.png", "walk_02.png"])
     }
 
-    @Test("a clip does not swallow its own glasses variant")
+    @Test("a clip does not swallow a longer name that starts the same way")
     func prefixDoesNotOverreach() {
         // Without the "underscore then digits only" rule, `idle` would match
         // idle_glasses_01.png and the two clips would fight.
@@ -198,29 +198,14 @@ struct CharacterPackTests {
             ClipName.idle: clip(ClipName.idle),
             ClipName.walk: clip(ClipName.walk),
         ])
-        #expect(pack.resolveClip(named: ClipName.walk, wearingGlasses: false)?.name == ClipName.walk)
+        #expect(pack.resolveClip(named: ClipName.walk)?.name == ClipName.walk)
     }
 
     @Test("a missing clip falls back to idle rather than nothing")
     func missingClipFallsBackToIdle() {
         // Half-finished character pack: the app must still work.
         let pack = CharacterPack(name: "Test", clips: [ClipName.idle: clip(ClipName.idle)])
-        #expect(pack.resolveClip(named: ClipName.waterReminder, wearingGlasses: false)?.name == ClipName.idle)
-    }
-
-    @Test("glasses use the variant clip when the art exists")
-    func glassesVariantUsed() {
-        let pack = CharacterPack(name: "Test", clips: [
-            ClipName.idle: clip(ClipName.idle),
-            "idle_glasses": clip("idle_glasses"),
-        ])
-        #expect(pack.resolveClip(named: ClipName.idle, wearingGlasses: true)?.name == "idle_glasses")
-    }
-
-    @Test("glasses fall back to the plain clip when no variant exists")
-    func glassesFallBack() {
-        let pack = CharacterPack(name: "Test", clips: [ClipName.idle: clip(ClipName.idle)])
-        #expect(pack.resolveClip(named: ClipName.idle, wearingGlasses: true)?.name == ClipName.idle)
+        #expect(pack.resolveClip(named: ClipName.waterReminder)?.name == ClipName.idle)
     }
 
     @Test("an empty clip is treated as missing")
@@ -229,7 +214,7 @@ struct CharacterPackTests {
             ClipName.idle: clip(ClipName.idle),
             ClipName.walk: AnimationClip(name: ClipName.walk, framePaths: [], frameDuration: 0.1, loops: true),
         ])
-        #expect(pack.resolveClip(named: ClipName.walk, wearingGlasses: false)?.name == ClipName.idle)
+        #expect(pack.resolveClip(named: ClipName.walk)?.name == ClipName.idle)
         #expect(pack.missingClipNames.contains(ClipName.walk))
     }
 
@@ -237,8 +222,8 @@ struct CharacterPackTests {
     func packWithoutIdleIsUnusable() {
         let pack = CharacterPack(name: "Broken", clips: [ClipName.walk: clip(ClipName.walk)])
         #expect(pack.isUsable == false)
-        #expect(pack.resolveClip(named: ClipName.walk, wearingGlasses: false)?.name == ClipName.walk)
-        #expect(pack.resolveClip(named: ClipName.wave, wearingGlasses: false) == nil)
+        #expect(pack.resolveClip(named: ClipName.walk)?.name == ClipName.walk)
+        #expect(pack.resolveClip(named: ClipName.wave) == nil)
     }
 
     @Test("missing clips are reported for display in Settings")

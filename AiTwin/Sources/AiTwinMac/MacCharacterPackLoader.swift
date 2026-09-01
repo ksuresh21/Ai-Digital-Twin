@@ -81,6 +81,9 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
             return nil
         }
 
+        let manifest = Self.readManifest(in: directory)
+        let tops = manifest?.clipTopFractions ?? [:]
+
         var clips: [String: AnimationClip] = [:]
         for definition in ClipDefinition.standard {
             let folder = directory.appendingPathComponent(definition.folder, isDirectory: true)
@@ -91,28 +94,45 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
                 prefix: definition.filePrefix,
                 in: folder,
                 frameDuration: frameDuration,
-                loops: definition.loops
+                loops: definition.loops,
+                contentTopFraction: tops[definition.name] ?? 0
             ) {
                 clips[definition.name] = clip
             }
 
-            let glassesName = ClipName.glassesVariant(of: definition.name)
-            if let glassesClip = loadClip(
-                name: glassesName,
-                prefix: "\(definition.filePrefix)_glasses",
-                in: folder,
-                frameDuration: frameDuration,
-                loops: definition.loops
-            ) {
-                clips[glassesName] = glassesClip
-            }
         }
 
-        let pack = CharacterPack(name: name, clips: clips)
+        let pack = CharacterPack(
+            name: name,
+            clips: clips,
+            characterHeightFraction: Self.characterHeightFraction(in: directory)
+        )
         if !pack.missingClipNames.isEmpty {
             NSLog("[AiTwin] Pack '\(name)' is missing clips: \(pack.missingClipNames.joined(separator: ", ")). They will fall back to idle.")
         }
         return pack.isUsable ? pack : nil
+    }
+
+    /// Reads `pack.json` for the character's share of the frame height.
+    ///
+    /// Absent or unreadable means 1.0 — the character fills the frame — which is
+    /// how every pack behaved before manifests existed, so old packs keep
+    /// working untouched.
+    private static func characterHeightFraction(in directory: URL) -> Double {
+        guard let manifest = readManifest(in: directory), manifest.canvasHeight > 0 else { return 1 }
+        return manifest.characterHeight / manifest.canvasHeight
+    }
+
+    struct PackManifest: Decodable {
+        let characterHeight: Double
+        let canvasHeight: Double
+        let clipTopFractions: [String: Double]?
+    }
+
+    private static func readManifest(in directory: URL) -> PackManifest? {
+        let url = directory.appendingPathComponent("pack.json")
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(PackManifest.self, from: data)
     }
 
     private func loadClip(
@@ -120,7 +140,8 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
         prefix: String,
         in folder: URL,
         frameDuration: TimeInterval,
-        loops: Bool
+        loops: Bool,
+        contentTopFraction: Double = 0
     ) -> AnimationClip? {
         guard let fileNames = try? fileManager.contentsOfDirectory(atPath: folder.path) else { return nil }
         let ordered = FrameDiscovery.orderedFrames(withPrefix: prefix, in: fileNames)
@@ -138,7 +159,10 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
         }
         guard !validPaths.isEmpty else { return nil }
 
-        return AnimationClip(name: name, framePaths: validPaths, frameDuration: frameDuration, loops: loops)
+        return AnimationClip(
+            name: name, framePaths: validPaths, frameDuration: frameDuration,
+            loops: loops, contentTopFraction: contentTopFraction
+        )
     }
 }
 

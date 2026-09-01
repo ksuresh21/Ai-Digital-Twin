@@ -21,17 +21,27 @@ public struct CompanionOverlayView: View {
     }
 
     public var body: some View {
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: model.anchorsToTop ? .top : .bottom) {
             CharacterView(
                 image: model.image,
                 facing: model.facing,
-                height: model.characterHeight,
+                height: model.frameHeight,
                 entranceProgress: model.entranceProgress
             )
+            // At a top corner, lift her by the frame's unused headroom so her
+            // top pixel is flush with the panel's top edge. Without this she
+            // hung tens of points below the screen edge -- and drifted as the
+            // pose changed, because how much headroom goes unused depends on
+            // the clip. See CompanionLayout.topAnchoredLift.
+            .offset(y: model.anchorsToTop
+                    ? -CompanionLayout.topAnchoredLift(frameHeight: model.frameHeight,
+                                                       headHeight: model.headHeight)
+                    : 0)
 
             if let bubble = model.bubble {
                 SpeechBubbleView(
                     message: bubble.message,
+                    countdown: model.countdown,
                     primaryTitle: bubble.primaryTitle,
                     onPrimary: bubble.primaryTitle == nil ? nil : { model.onPrimaryAction?() },
                     onSnooze: bubble.showsSnooze ? { model.onSnoozeAction?() } : nil,
@@ -39,16 +49,28 @@ public struct CompanionOverlayView: View {
                     palette: model.palette,
                     style: model.bubbleStyle
                 )
-                // Sits just above her head. Because this is an overlay, its own
-                // height never feeds back into the character's position.
-                .offset(y: -(model.characterHeight + 2))
+                // Sits just clear of whatever the *current pose* reaches, on
+                // whichever side has room. Anchoring to the frame left a
+                // 50-point gap in every ordinary pose, because the frame carries
+                // headroom only a jump ever uses; anchoring to the character
+                // height put the cloud through her hands when she jumped.
+                // Measured from her, not from the frame, on both sides. The
+                // lift above put her feet at `headHeight` below the panel top,
+                // so the same distance places the cloud just clear of her
+                // either way up.
+                .offset(y: {
+                    let distance = CompanionLayout.cloudDistance(headHeight: model.headHeight)
+                    return model.anchorsToTop ? distance : -distance
+                }())
                 // Keyed by message so a new reminder animates in rather than
                 // silently swapping its text.
                 .id(bubble.message)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .frame(maxWidth: .infinity, maxHeight: .infinity,
+               alignment: model.anchorsToTop ? .top : .bottom)
         .animation(.easeOut(duration: 0.22), value: model.bubble)
+        .animation(.easeOut(duration: 0.18), value: model.headHeight)
         // Explicitly clear: the panel is transparent, and any background here
         // would reintroduce the opaque rectangle the whole design avoids.
         .background(Color.clear)

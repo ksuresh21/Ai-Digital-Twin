@@ -11,11 +11,33 @@ public struct AnimationClip: Equatable, Sendable {
     public let frameDuration: TimeInterval
     public let loops: Bool
 
-    public init(name: String, framePaths: [String], frameDuration: TimeInterval, loops: Bool) {
+    /// Where this clip's artwork starts, as a fraction of the frame height from
+    /// the top. Standing poses leave headroom (~0.19); a jump uses it all (0.0).
+    ///
+    /// The thought cloud is placed from this rather than from the frame height.
+    /// Clearing the whole frame left a 50-point gap above her head in every
+    /// ordinary pose, because the frame carries headroom that only a jump ever
+    /// occupies. 0 for packs with no manifest, which clears everything.
+    public let contentTopFraction: Double
+
+    public init(
+        name: String,
+        framePaths: [String],
+        frameDuration: TimeInterval,
+        loops: Bool,
+        contentTopFraction: Double = 0
+    ) {
         self.name = name
         self.framePaths = framePaths
         self.frameDuration = frameDuration
         self.loops = loops
+        self.contentTopFraction = min(0.9, max(0, contentTopFraction))
+    }
+
+    /// How far above the frame's bottom this clip's artwork reaches, when the
+    /// frame is drawn `frameHeight` points tall.
+    public func headHeight(inFrameOf frameHeight: Double) -> Double {
+        frameHeight * (1 - contentTopFraction)
     }
 
     public var isEmpty: Bool { framePaths.isEmpty }

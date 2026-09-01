@@ -25,7 +25,39 @@ The cost of Option A is more files on disk. At a few kilobytes each, that is not
 
 ---
 
-## 1b. The importer (use this instead of doing it by hand)
+## 1a. Installing a character (no tools needed)
+
+**Settings → Character → drag a `.zip` or folder onto the drop zone.**
+
+That is the whole process. The app measures every frame, rescales each animation
+so the character is one consistent size, lines them all up on one floor, and
+writes the manifest — then switches to the new character. A pack made anywhere,
+at any zoom, works.
+
+To share a character: zip the folder and send it.
+
+```
+MyCharacter/                 ← zip this
+├── Idle/       idle_01.png …
+├── Walking/    walk_01.png …
+├── Waving/     wave_01.png …
+└── …
+```
+
+Only the **folder names** have to match (`Idle`, `Walking`, `Waving`,
+`WaterReminder`, `EyeBreak`, `Sleep`, `HappyMood`, `Cheer`, `Concerned`, `Yawn`,
+`Stretch`, `Focus`, `Sitting`, `Peek`). File names inside just need a number in
+them — `walking_1.png` imports fine.
+
+Installed packs live in `~/Library/Application Support/AiTwin/Characters/<Name>/`,
+so they survive app updates. **Settings → Character → Open Characters Folder…**
+reveals them.
+
+*A pack with only `Idle/idle_01.png` is valid — everything else falls back to it.*
+
+---
+
+## 1b. The Python importer (for authoring, not installing)
 
 ```bash
 python3 Scripts/import_character.py <folder of your images> --name <PackName> --install

@@ -11,8 +11,10 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
     // MARK: Reminders
     public var waterEnabled: Bool
     public var eyeBreakEnabled: Bool
+    public var stretchEnabled: Bool
     public var waterInterval: TimeInterval
     public var eyeBreakInterval: TimeInterval
+    public var stretchInterval: TimeInterval
     public var snoozeInterval: TimeInterval
     /// Global pause. Survives relaunch on purpose -- a user who paused for a
     /// presentation should not be ambushed by a restart.
@@ -28,13 +30,13 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
     public var quietHours: QuietHours
 
     // MARK: Water tracking
-    public var dailyWaterGoal: Int
+    /// Glass size and daily target, both in millilitres.
+    public var water: WaterIntake
 
     // MARK: Appearance / placement
     public var corner: ScreenCorner
     public var characterHeight: Double
     public var characterPackName: String
-    public var wearsGlasses: Bool
 
     // MARK: Eye-break session
     /// How long the screen dims for after you accept an eye break.
@@ -44,6 +46,21 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
     public var dimsScreenOnBreak: Bool
     /// How dark the dimming gets, 0...1.
     public var dimOpacity: Double
+
+    // MARK: Focus sessions
+    public var focusSessionLength: TimeInterval
+    public var focusBreakLength: TimeInterval
+    public var focusLongBreakLength: TimeInterval
+    /// A long break follows every Nth working session.
+    public var sessionsBeforeLongBreak: Int
+
+    // MARK: Idle chatter
+    public var chatterFrequency: ChatterScheduler.Frequency
+
+    // MARK: Moods
+    /// Whether she reacts to how the day is going at all.
+    public var moodsEnabled: Bool
+    public var moodThresholds: MoodMonitor.Thresholds
 
     // MARK: Appearance of messages
     public var bubbleStyle: BubbleStyle
@@ -65,22 +82,30 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
     public static let defaults = AiTwinSettings(
         waterEnabled: true,
         eyeBreakEnabled: true,
+        stretchEnabled: true,
         waterInterval: AiTwinConfiguration.production.waterReminderInterval,
         eyeBreakInterval: AiTwinConfiguration.production.eyeBreakInterval,
+        stretchInterval: AiTwinConfiguration.production.stretchInterval,
         snoozeInterval: AiTwinConfiguration.production.snoozeInterval,
         remindersPaused: false,
         pauseWhenIdle: true,
         idleThreshold: AiTwinConfiguration.production.idlePauseThreshold,
         quietHours: .disabled,
-        dailyWaterGoal: 8,
+        water: .default,
         eyeBreakDuration: 60,
         dimsScreenOnBreak: true,
         dimOpacity: 0.5,
+        focusSessionLength: 25 * 60,
+        focusBreakLength: 5 * 60,
+        focusLongBreakLength: 15 * 60,
+        sessionsBeforeLongBreak: 4,
+        chatterFrequency: .rare,
+        moodsEnabled: true,
+        moodThresholds: .default,
         bubbleStyle: .cloud,
         corner: .bottomLeft,
         characterHeight: AiTwinConfiguration.production.characterHeight,
         characterPackName: CharacterPack.defaultPackName,
-        wearsGlasses: false,
         userName: "",
         hasCompletedFirstRun: false,
         greetOnLaunch: true,
@@ -104,22 +129,30 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         }
         waterEnabled        = value(.waterEnabled, fallback.waterEnabled)
         eyeBreakEnabled     = value(.eyeBreakEnabled, fallback.eyeBreakEnabled)
+        stretchEnabled      = value(.stretchEnabled, fallback.stretchEnabled)
         waterInterval       = value(.waterInterval, fallback.waterInterval)
         eyeBreakInterval    = value(.eyeBreakInterval, fallback.eyeBreakInterval)
+        stretchInterval     = value(.stretchInterval, fallback.stretchInterval)
         snoozeInterval      = value(.snoozeInterval, fallback.snoozeInterval)
         remindersPaused     = value(.remindersPaused, fallback.remindersPaused)
         pauseWhenIdle       = value(.pauseWhenIdle, fallback.pauseWhenIdle)
         idleThreshold       = value(.idleThreshold, fallback.idleThreshold)
         quietHours          = value(.quietHours, fallback.quietHours)
-        dailyWaterGoal      = value(.dailyWaterGoal, fallback.dailyWaterGoal)
+        water               = value(.water, fallback.water)
         eyeBreakDuration    = value(.eyeBreakDuration, fallback.eyeBreakDuration)
         dimsScreenOnBreak   = value(.dimsScreenOnBreak, fallback.dimsScreenOnBreak)
         dimOpacity          = value(.dimOpacity, fallback.dimOpacity)
+        focusSessionLength  = value(.focusSessionLength, fallback.focusSessionLength)
+        focusBreakLength    = value(.focusBreakLength, fallback.focusBreakLength)
+        focusLongBreakLength = value(.focusLongBreakLength, fallback.focusLongBreakLength)
+        sessionsBeforeLongBreak = value(.sessionsBeforeLongBreak, fallback.sessionsBeforeLongBreak)
+        chatterFrequency    = value(.chatterFrequency, fallback.chatterFrequency)
+        moodsEnabled        = value(.moodsEnabled, fallback.moodsEnabled)
+        moodThresholds      = value(.moodThresholds, fallback.moodThresholds)
         bubbleStyle         = value(.bubbleStyle, fallback.bubbleStyle)
         corner              = value(.corner, fallback.corner)
         characterHeight     = value(.characterHeight, fallback.characterHeight)
         characterPackName   = value(.characterPackName, fallback.characterPackName)
-        wearsGlasses        = value(.wearsGlasses, fallback.wearsGlasses)
         userName            = value(.userName, fallback.userName)
         hasCompletedFirstRun = value(.hasCompletedFirstRun, fallback.hasCompletedFirstRun)
         greetOnLaunch       = value(.greetOnLaunch, fallback.greetOnLaunch)
@@ -130,37 +163,50 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
 
     /// Explicit memberwise initialiser, which the custom decoder above suppresses.
     public init(
-        waterEnabled: Bool, eyeBreakEnabled: Bool,
+        waterEnabled: Bool, eyeBreakEnabled: Bool, stretchEnabled: Bool,
         waterInterval: TimeInterval, eyeBreakInterval: TimeInterval,
+        stretchInterval: TimeInterval,
         snoozeInterval: TimeInterval, remindersPaused: Bool,
         pauseWhenIdle: Bool, idleThreshold: TimeInterval,
-        quietHours: QuietHours, dailyWaterGoal: Int,
+        quietHours: QuietHours, water: WaterIntake,
         eyeBreakDuration: TimeInterval, dimsScreenOnBreak: Bool, dimOpacity: Double,
+        focusSessionLength: TimeInterval, focusBreakLength: TimeInterval,
+        focusLongBreakLength: TimeInterval, sessionsBeforeLongBreak: Int,
+        chatterFrequency: ChatterScheduler.Frequency,
+        moodsEnabled: Bool, moodThresholds: MoodMonitor.Thresholds,
         bubbleStyle: BubbleStyle,
         corner: ScreenCorner, characterHeight: Double,
-        characterPackName: String, wearsGlasses: Bool,
+        characterPackName: String,
         userName: String, hasCompletedFirstRun: Bool,
         greetOnLaunch: Bool, greetOnWake: Bool,
         startAtLogin: Bool, testModeEnabled: Bool
     ) {
         self.waterEnabled = waterEnabled
         self.eyeBreakEnabled = eyeBreakEnabled
+        self.stretchEnabled = stretchEnabled
         self.waterInterval = waterInterval
         self.eyeBreakInterval = eyeBreakInterval
+        self.stretchInterval = stretchInterval
         self.snoozeInterval = snoozeInterval
         self.remindersPaused = remindersPaused
         self.pauseWhenIdle = pauseWhenIdle
         self.idleThreshold = idleThreshold
         self.quietHours = quietHours
-        self.dailyWaterGoal = dailyWaterGoal
+        self.water = water
         self.eyeBreakDuration = eyeBreakDuration
         self.dimsScreenOnBreak = dimsScreenOnBreak
         self.dimOpacity = dimOpacity
+        self.focusSessionLength = focusSessionLength
+        self.focusBreakLength = focusBreakLength
+        self.focusLongBreakLength = focusLongBreakLength
+        self.sessionsBeforeLongBreak = sessionsBeforeLongBreak
+        self.chatterFrequency = chatterFrequency
+        self.moodsEnabled = moodsEnabled
+        self.moodThresholds = moodThresholds
         self.bubbleStyle = bubbleStyle
         self.corner = corner
         self.characterHeight = characterHeight
         self.characterPackName = characterPackName
-        self.wearsGlasses = wearsGlasses
         self.userName = userName
         self.hasCompletedFirstRun = hasCompletedFirstRun
         self.greetOnLaunch = greetOnLaunch
@@ -173,6 +219,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         switch kind {
         case .water:    return waterInterval
         case .eyeBreak: return eyeBreakInterval
+        case .stretch:  return stretchInterval
         }
     }
 
@@ -180,6 +227,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         switch kind {
         case .water:    return waterEnabled
         case .eyeBreak: return eyeBreakEnabled
+        case .stretch:  return stretchEnabled
         }
     }
 }

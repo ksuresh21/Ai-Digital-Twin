@@ -41,6 +41,7 @@ Requires: Pillow, numpy.  (pip3 install pillow numpy)
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -65,10 +66,46 @@ LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS")
 # at 1:1 at maximum size and downscaled from there -- never upscaled, which is
 # what would make it soft.
 # ---------------------------------------------------------------------------
-CANVAS_HEIGHT = 512
-CHARACTER_HEIGHT = 470      # the character itself, leaving room for hair/arms
+BASE_CANVAS_HEIGHT = 512    # minimum; grown to fit poses taller than standing
+CHARACTER_HEIGHT = 470      # the standing character, floor to top of the head
 BOTTOM_MARGIN = 16          # gap between the feet and the bottom of the canvas
+TOP_MARGIN = 14             # breathing room above the tallest pose
 MIN_CANVAS_WIDTH = 320
+
+# How tall a clip's artwork should be relative to the standard standing height.
+#
+# The importer normally scales every clip so its content is exactly
+# CHARACTER_HEIGHT tall. That is right for standing poses, and wrong for two
+# cases it cannot detect on its own:
+#
+#   * Poses where limbs extend past the head (arms overhead, a jump). Their
+#     bounding box is taller than the body, so normalising the box shrinks the
+#     character.
+#   * Poses that are genuinely a different size — sitting is shorter than
+#     standing, and a peeking close-up is a head, not a body.
+#
+# Automatic inference was tried twice (bounding box, then head width) and both
+# were too noisy: generation zoom varies per batch, and "widest row" catches
+# hair, shoulders or arms depending on the pose. A short table of hints is more
+# honest and takes a minute to tune by eye.
+CLIP_HEIGHT_RATIO = {
+    "stretch": 1.16,   # both arms straight overhead
+    # cheer needs no hint: its tallest frame is a standing pose, and the jump
+    # frames are curled up and shorter. A hint here oversized the whole clip.
+    "yawn":    1.16,   # one arm raised, and a lot of hair above the head
+    "concerned": 1.14, # more hair volume than the standing poses
+    "focus":   0.86,   # seated on a chair: floor-to-head is shorter than standing
+    "sitting": 0.86,
+    "peek":    0.62,   # head and torso leaning around an edge, not a whole body
+}
+
+# Where a clip sits on the canvas. Almost everything stands centred on the
+# shared baseline; the peeking pose is drawn hugging a vertical edge, so it is
+# pinned to the top-left instead and the window is placed against the screen
+# edge to match.
+CLIP_ALIGNMENT = {
+    "peek": "top-left",
+}
 ALPHA_THRESHOLD = 16        # below this a pixel counts as empty
 
 # Clip name -> (output folder, file prefix, keywords that identify it).
@@ -81,13 +118,14 @@ CLIPS = [
     ("drink",         "WaterReminder", "drink",    ["waterreminder", "water", "drink", "hydrat"]),
     ("eyebreak",      "EyeBreak",      "eyebreak", ["eyebreak", "eye_break", "eyerest", "eye"]),
     ("sleep",         "Sleep",         "sleep",    ["sleeping", "sleep", "tired", "rest"]),
-    ("happy",         "HappyMood",     "happy",    ["happymood", "happy", "celebrat", "cheer"]),
+    ("happy",         "HappyMood",     "happy",    ["happymood", "happy", "pleased"]),
     # Glasses is a VARIANT, not a state -- it lands in Idle/ as idle_glasses_NN.
-    ("focus",         "Focus",         "focus",    ["focus", "reading", "read", "chair", "pomodoro"]),
+    ("focus",         "Focus",         "focus",    ["focus", "reading", "pomodoro"]),
     ("stretch",       "Stretch",       "stretch",  ["stretch", "posture"]),
     ("concerned",     "Concerned",     "concerned", ["concerned", "worried", "worry"]),
     ("cheer",         "Cheer",         "cheer",    ["cheer", "celebrate", "milestone", "proud"]),
     ("peek",          "Peek",          "peek",     ["peek", "peeking", "hiding"]),
+    ("sitting",       "Sitting",       "sitting",  ["sitting", "seated"]),
     ("yawn",          "Yawn",          "yawn",     ["yawn", "yawning", "drowsy"]),
     # Glasses is a VARIANT, not a state -- it lands in Idle/ as idle_glasses_NN.
     ("idle_glasses",  "Idle",          "idle_glasses", ["glasses", "specs"]),
@@ -138,6 +176,15 @@ def slice_sheet(image, min_run_fraction=0.02):
     runs = [r for r in runs if r[1] - r[0] >= minimum]
 
     if len(runs) < 2:
+        return [image]
+
+    # Every run in a real contact sheet is a whole character, so the runs are
+    # roughly equal in width. Detached confetti, sparkles or a dropped prop make
+    # narrow runs beside a wide one -- that is one frame with decoration, not a
+    # sheet. Requiring every run to be at least a third of the widest one tells
+    # the two apart.
+    widest = max(r[1] - r[0] for r in runs)
+    if any((r[1] - r[0]) < widest * 0.34 for r in runs):
         return [image]
 
     frames = []
@@ -212,6 +259,32 @@ def collect(source):
     return found, skipped, unmatched
 
 
+CANONICAL_NAME = re.compile(r"^[a-z_]+_\d+\.(png|tiff?)$", re.IGNORECASE)
+
+
+def prefer_canonical(found):
+    """
+    Drops the loose originals when a clip already has canonical frames.
+
+    After a first import a pack contains both: the files you dropped in
+    (`sleeping_01.png`, `WaterReminder_01.png`) and the normalised output
+    (`sleep_01.png`, `drink_01.png`). Re-importing would take both and play
+    every pose twice. Canonical wins, and nothing is deleted -- the originals
+    stay on disk, they are simply no longer imported.
+    """
+    notes = []
+    for clip, frames in list(found.items()):
+        canonical, loose = [], []
+        for frame in frames:
+            name = os.path.basename(frame[0].split("[")[0])
+            (canonical if CANONICAL_NAME.match(name) else loose).append(frame)
+        if canonical and loose:
+            found[clip] = canonical
+            notes.append(f"{clip}: kept {len(canonical)} already-named frame(s), "
+                         f"ignored {len(loose)} superseded original(s)")
+    return notes
+
+
 def prefer_sheets(found, prefer="sheet"):
     """
     Drops the redundant half when a clip has both a contact sheet and hand-made
@@ -253,16 +326,20 @@ def normalise(found, verbose=True):
         measured[clip] = {
             "height": max(b[3] - b[1] for b in boxes),   # tallest pose in the clip
             "bottom": max(b[3] for b in boxes),          # lowest point (the feet)
+            "top":    min(b[1] for b in boxes),          # highest point across the clip
             "left":   min(b[0] for b in boxes),
             "right":  max(b[2] for b in boxes),
         }
 
     if not measured:
-        return {}, MIN_CANVAS_WIDTH
+        return {}, MIN_CANVAS_WIDTH, BASE_CANVAS_HEIGHT
 
-    # One scale per clip, so the character is the same height in all of them.
+    # One scale per clip, so the character is the same height in all of them,
+    # adjusted by the hint table for poses that are not plain standing.
     for clip, m in measured.items():
-        m["scale"] = CHARACTER_HEIGHT / m["height"]
+        ratio = CLIP_HEIGHT_RATIO.get(clip, 1.0)
+        m["ratio"] = ratio
+        m["scale"] = (CHARACTER_HEIGHT * ratio) / m["height"]
 
     # The canvas has to be wide enough for the widest clip once scaled --
     # a walk cycle with swinging arms is much wider than a standing pose.
@@ -270,7 +347,30 @@ def normalise(found, verbose=True):
     canvas_width = max(MIN_CANVAS_WIDTH, int(widest) + 32)
     canvas_width += canvas_width % 2
 
-    baseline = CANVAS_HEIGHT - BOTTOM_MARGIN
+    # And tall enough for the tallest pose. A hint above 1.0 -- arms overhead, a
+    # jump -- makes a clip taller than the standing character, and a fixed
+    # canvas silently guillotined it. Every clip shares one canvas, so this is
+    # computed across all of them.
+    # Tall enough for the tallest pose. A clip is aligned by its LOWEST point,
+    # so a jump -- whose feet leave the ground -- sits higher on the canvas than
+    # its own height suggests. Measuring only the height guillotined the raised
+    # arms of exactly those frames, so the span that matters is the clip's full
+    # top-to-bottom reach after scaling.
+    tallest = max((m["bottom"] - m["top"]) * m["scale"] for m in measured.values())
+    canvas_height = max(BASE_CANVAS_HEIGHT, int(tallest) + BOTTOM_MARGIN + TOP_MARGIN)
+    canvas_height += canvas_height % 2
+
+    baseline = canvas_height - BOTTOM_MARGIN
+
+    # Belt and braces: if a clip still would not fit, shrink it until it does.
+    # Losing a few percent of size is always better than losing her hands.
+    for clip, m in measured.items():
+        reach = (m["bottom"] - m["top"]) * m["scale"]
+        available = baseline - TOP_MARGIN
+        if reach > available:
+            m["scale"] *= available / reach
+            print(f"    {clip}: scaled down to fit the canvas "
+                  f"(would have been clipped by {int(reach - available)}px)")
     output = {}
 
     for clip, frames in found.items():
@@ -281,8 +381,14 @@ def normalise(found, verbose=True):
         centre_x = (m["left"] + m["right"]) / 2.0
 
         if verbose:
+            note = ""
+            if m["ratio"] != 1.0:
+                note = f"  [x{m['ratio']} pose hint]"
+            if clip in CLIP_ALIGNMENT:
+                note += f"  [{CLIP_ALIGNMENT[clip]}-aligned]"
             print(f"    {clip:14s} {len(frames)} frame(s)  "
-                  f"character {m['height']}px -> {CHARACTER_HEIGHT}px  (x{scale:.3f})")
+                  f"character {m['height']}px -> {round(CHARACTER_HEIGHT * m['ratio'])}px"
+                  f"  (x{scale:.3f}){note}")
 
         rendered = []
         for label, image, _ in frames:
@@ -290,16 +396,25 @@ def normalise(found, verbose=True):
                 (max(1, round(image.width * scale)), max(1, round(image.height * scale))),
                 LANCZOS,
             )
-            canvas = Image.new("RGBA", (canvas_width, CANVAS_HEIGHT), (0, 0, 0, 0))
-            # Align the clip's lowest point to the shared baseline and its
-            # horizontal centre to the canvas centre.
+            canvas = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
+            # Align the clip's horizontal centre to the canvas centre, and its
+            # lowest point to the shared baseline -- except for top-aligned
+            # clips, whose top edge lines up with the standing character's head.
             offset_x = round(canvas_width / 2.0 - centre_x * scale)
-            offset_y = round(baseline - m["bottom"] * scale)
+            alignment = CLIP_ALIGNMENT.get(clip, "bottom")
+            if "top" in alignment:
+                head_line = baseline - CHARACTER_HEIGHT
+                offset_y = round(head_line - (m["bottom"] - m["height"]) * scale)
+            else:
+                offset_y = round(baseline - m["bottom"] * scale)
+            if "left" in alignment:
+                # Hug the canvas edge so the drawn edge lines up with the screen's.
+                offset_x = round(-m["left"] * scale)
             canvas.alpha_composite(scaled, (offset_x, offset_y))
             rendered.append((label, canvas))
         output[clip] = rendered
 
-    return output, canvas_width
+    return output, canvas_width, canvas_height
 
 
 def write(output, destination, dry_run=False, clean=False):
@@ -381,6 +496,17 @@ def main():
     else:
         destination = source
 
+    # Importing a pack in place re-reads frames this tool wrote on a previous
+    # run. That round-trip has bitten hard: a clip whose art the slicer reads
+    # differently the second time loses frames, and the originals are already
+    # gone. Keep your untouched source images in their own folder and point
+    # --out at the pack.
+    if destination == source and not args.dry_run:
+        print("WARNING: source and destination are the same folder.")
+        print("         Re-importing a pack re-reads frames from a previous run.")
+        print("         Prefer:  import_character.py <your original images> --out <pack>")
+        print()
+
     print(f"Reading   {source}")
     print(f"Pack      {name}")
     print(f"Writing   {destination}{'   (DRY RUN)' if args.dry_run else ''}\n")
@@ -399,12 +525,14 @@ def main():
 
     for note in prefer_sheets(found, args.prefer):
         print(f"    {note}")
+    for note in prefer_canonical(found):
+        print(f"    {note}")
     if skipped or unmatched:
         print()
 
     print("Normalising…")
-    output, canvas_width = normalise(found)
-    print(f"\n    canvas {canvas_width}x{CANVAS_HEIGHT}, character {CHARACTER_HEIGHT}px, "
+    output, canvas_width, canvas_height = normalise(found)
+    print(f"\n    canvas {canvas_width}x{canvas_height}, character {CHARACTER_HEIGHT}px, "
           f"feet on a shared baseline\n")
 
     backed_up = False
@@ -423,6 +551,31 @@ def main():
 
     written, removed = write(output, destination,
                              dry_run=args.dry_run, clean=backed_up)
+
+    # A manifest so the app can scale by the CHARACTER rather than the canvas.
+    # Without it, padding added for a tall pose (arms overhead) would shrink the
+    # character in every other clip -- the canvas grew, so everything drawn to
+    # canvas height got smaller.
+    if not args.dry_run:
+        # Where each clip's artwork starts, so the app can sit the thought
+        # cloud just above that pose's head instead of above the whole frame.
+        tops = {}
+        for clip, frames in output.items():
+            values = [b[1] for b in (content_bbox(image) for _, image in frames) if b]
+            if values:
+                tops[clip] = round(min(values) / canvas_height, 4)
+
+        manifest = {
+            "characterHeight": CHARACTER_HEIGHT,
+            "canvasHeight": canvas_height,
+            "canvasWidth": canvas_width,
+            "baseline": canvas_height - BOTTOM_MARGIN,
+            "clipTopFractions": tops,
+        }
+        with open(os.path.join(destination, "pack.json"), "w") as handle:
+            json.dump(manifest, handle, indent=2)
+        print(f"Wrote pack.json — character is {CHARACTER_HEIGHT} of {canvas_height}px")
+
 
     if removed:
         print(f"Replaced {removed} original file(s) — they are safe in .source-backup/\n")

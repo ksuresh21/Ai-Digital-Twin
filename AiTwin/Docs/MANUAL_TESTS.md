@@ -69,10 +69,48 @@ water to 30 seconds and eye break to 1 minute.
 - [ ] "Looked away 👀" dismisses it
 - [ ] The next cycle starts — it fires again ~60s later
 
+**7a. The break itself dims the screen** — this regressed once, silently
+- [ ] Accepting the eye break **dims every display** (~50% by default)
+- [ ] A **large countdown** appears in the middle of the screen, not just in her cloud
+- [ ] Under it, a line explaining why the screen went dark
+- [ ] The countdown ticks down without the digits shifting sideways
+- [ ] Her cloud shows a message and a "Skip" button, and the message **does not
+      re-animate** every second
+- [ ] Clicks and typing still work while dimmed — try switching apps
+- [ ] The screen returns to normal when the countdown ends, and she fades out
+- [ ] "Skip" ends the break early and undims immediately
+- [ ] It dims on **every** display, not just the main one
+
+> Why this has its own entry: accepting the break used to resolve the reminder
+> before the break started, so she simply walked away — no dimming, no
+> countdown, no error. The state machine tests now cover the ordering, but the
+> coordinator that got it wrong lives in the executable target and cannot be
+> unit-tested, so this checkbox is the guard.
+
 **7b. Snooze**
 - [ ] "Snooze" makes the character leave
 - [ ] It comes back after the snooze interval, not a full cycle
 - [ ] Menu bar countdown reflects the snooze
+
+---
+
+## B2. Focus sessions and corners
+
+**7c. The focus clock is calm**
+- [ ] Start a session from the menu bar; she sits down with a clock above her
+- [ ] The clock counts down **once a second**
+- [ ] Only the digits change — the cloud does not flash, resize, or re-appear
+- [ ] The digits do not shift left and right as the numbers change
+- [ ] "End" stops the session
+
+**7d. Top corners tuck her into the corner**
+- [ ] Settings → General → corner → **top-left**; trigger a reminder
+- [ ] Her head is close to the top of the screen, not floating well below it
+- [ ] Her cloud appears **below** her, not above
+- [ ] Trigger several different moods (Developer → Behaviours): she stays at the
+      **same height** — no drifting up and down as the pose changes
+- [ ] A jump or a stretch is not cut off at the top
+- [ ] Repeat at top-right; bottom corners are unchanged
 
 ---
 

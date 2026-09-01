@@ -21,7 +21,7 @@ public enum CharacterPaletteExtractor {
     @MainActor
     public static func palette(for pack: CharacterPack?, cache: FrameImageCache) -> CharacterPalette {
         guard let pack,
-              let clip = pack.resolveClip(named: ClipName.idle, wearingGlasses: false),
+              let clip = pack.resolveClip(named: ClipName.idle),
               let path = clip.framePaths.first,
               let image = cache.image(at: path),
               let accent = accentColour(of: image)

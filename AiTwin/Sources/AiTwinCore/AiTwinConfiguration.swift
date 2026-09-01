@@ -14,6 +14,8 @@ public struct AiTwinConfiguration: Equatable, Sendable {
     public var waterReminderInterval: TimeInterval
     /// The eye-break cycle. 40 minutes in production, per the 20-20-20 style rule.
     public var eyeBreakInterval: TimeInterval
+    /// How often to suggest standing up and stretching.
+    public var stretchInterval: TimeInterval
     /// How long "Snooze" pushes a reminder back.
     public var snoozeInterval: TimeInterval
     /// Stop counting screen time after this much keyboard/mouse inactivity, so a
@@ -33,6 +35,19 @@ public struct AiTwinConfiguration: Equatable, Sendable {
     /// you noticed it happening, which made her seem to blink into existence
     /// rather than arrive.
     public var popDuration: TimeInterval
+    /// How long a clip previewed from Settings stays on screen.
+    public var previewDuration: TimeInterval
+    /// How long a wordless celebration (a logged glass of water) plays.
+    public var silentCelebrationDuration: TimeInterval
+    /// How long she dozes before slipping off screen.
+    public var sleepDuration: TimeInterval
+    /// Walking speed multiplier for a brisk exit after making a point.
+    public var hurriedExitMultiplier: Double
+    /// How long an unprompted peek lingers before she withdraws. Short by
+    /// design -- a peek that outstays its welcome is just an interruption.
+    public var chatterDuration: TimeInterval
+    /// How far off screen the peek starts, in points.
+    public var peekSlideDistance: Double
     /// How long the greeting wave holds before settling into idle.
     public var greetingDuration: TimeInterval
     /// How long the character loiters at the corner after a greeting before
@@ -59,11 +74,18 @@ public struct AiTwinConfiguration: Equatable, Sendable {
     public static let production = AiTwinConfiguration(
         waterReminderInterval: 45 * 60,
         eyeBreakInterval: 40 * 60,
+        stretchInterval: 60 * 60,
         snoozeInterval: 5 * 60,
         idlePauseThreshold: 5 * 60,
         animationFrameDuration: 1.0 / 8.0,
         walkingSpeed: 90,
         popDuration: 0.9,
+        previewDuration: 5,
+        silentCelebrationDuration: 2.2,
+        sleepDuration: 12,
+        hurriedExitMultiplier: 2.0,
+        chatterDuration: 4.5,
+        peekSlideDistance: 46,
         greetingDuration: 3.5,
         idleRestDuration: 4,
         reminderTimeout: 60,
@@ -80,11 +102,18 @@ public struct AiTwinConfiguration: Equatable, Sendable {
     public static let testing = AiTwinConfiguration(
         waterReminderInterval: 30,
         eyeBreakInterval: 60,
+        stretchInterval: 90,
         snoozeInterval: 10,
         idlePauseThreshold: 15,
         animationFrameDuration: 1.0 / 8.0,
         walkingSpeed: 90,
         popDuration: 0.9,
+        previewDuration: 5,
+        silentCelebrationDuration: 2.0,
+        sleepDuration: 8,
+        hurriedExitMultiplier: 2.0,
+        chatterDuration: 3.5,
+        peekSlideDistance: 46,
         greetingDuration: 2.0,
         idleRestDuration: 3,
         reminderTimeout: 20,

@@ -4,11 +4,13 @@ import Foundation
 public enum ReminderKind: String, Codable, CaseIterable, Sendable {
     case water
     case eyeBreak
+    case stretch
 
     public var displayName: String {
         switch self {
         case .water:    return "Water"
         case .eyeBreak: return "Eye Break"
+        case .stretch:  return "Stretch"
         }
     }
 
@@ -17,6 +19,7 @@ public enum ReminderKind: String, Codable, CaseIterable, Sendable {
         switch self {
         case .water:    return ClipName.waterReminder
         case .eyeBreak: return ClipName.eyeBreak
+        case .stretch:  return ClipName.stretch
         }
     }
 
@@ -24,6 +27,7 @@ public enum ReminderKind: String, Codable, CaseIterable, Sendable {
         switch self {
         case .water:    return "Done 💧"
         case .eyeBreak: return "Looked away 👀"
+        case .stretch:  return "Stretched 🙆"
         }
     }
 }

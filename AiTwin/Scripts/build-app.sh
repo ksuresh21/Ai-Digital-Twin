@@ -12,8 +12,17 @@
 #
 set -euo pipefail
 
+# Release is the default, and release builds do NOT contain the developer
+# tools: the mood previews and the sample-data generator sit behind the
+# AITWIN_DEV flag, which Package.swift sets only for debug configurations. So
+# the app this produces is the one that can be handed to someone.
+#
+#   ./Scripts/build-app.sh          production  (no developer tools)
+#   ./Scripts/build-app.sh --dev    development (Developer tab included)
 CONFIG="release"
-if [[ "${1:-}" == "--debug" ]]; then CONFIG="debug"; fi
+case "${1:-}" in
+  --dev|--debug) CONFIG="debug" ;;
+esac
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="AiTwin"
@@ -93,7 +102,11 @@ echo "==> Signing (ad-hoc)…"
 codesign --force --deep --sign - "$APP" 2>/dev/null || echo "    (ad-hoc signing skipped)"
 
 echo ""
-echo "Built: $APP"
+if [[ "$CONFIG" == "debug" ]]; then
+  echo "Built: $APP   [DEVELOPMENT — includes the Developer tab]"
+else
+  echo "Built: $APP   [production — developer tools not compiled in]"
+fi
 echo ""
 echo "Run it:      open \"$APP\""
 echo "Install it:  cp -R \"$APP\" /Applications/"

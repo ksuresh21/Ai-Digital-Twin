@@ -5,23 +5,174 @@ import AiTwinCore
 ///
 /// Three tabs so no single pane becomes a wall of controls: what reminds you,
 /// who does the reminding, and how the app behaves.
+/// Settings, laid out as a sidebar rather than a row of tabs.
+///
+/// A tab bar was the first attempt and it was the wrong control: with six
+/// sections the tabs were tiny, unlabelled at a glance, and gave no sense of
+/// where you were. A sidebar is what macOS itself moved to for System Settings,
+/// and for the same reasons -- every section is visible at once, named, and
+/// selectable in one click instead of two.
 public struct SettingsView: View {
     @ObservedObject var model: SettingsViewModel
+    @State private var section: Section = .general
 
     public init(model: SettingsViewModel) {
         self.model = model
     }
 
-    public var body: some View {
-        TabView {
-            RemindersSettingsTab(model: model)
-                .tabItem { Label("Reminders", systemImage: "bell") }
-            CharacterSettingsTab(model: model)
-                .tabItem { Label("Character", systemImage: "figure.wave") }
-            GeneralSettingsTab(model: model)
-                .tabItem { Label("General", systemImage: "gearshape") }
+    enum Section: String, CaseIterable, Identifiable {
+        case general, reminders, focus, character, stats
+        #if AITWIN_DEV
+        case developer
+        #endif
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .reminders: return "Reminders"
+            case .focus:     return "Focus"
+            case .character: return "Character"
+            case .stats:     return "Progress"
+            case .general:   return "General"
+            #if AITWIN_DEV
+            case .developer: return "Developer"
+            #endif
+            }
         }
-        .frame(width: 460, height: 470)
+
+        var icon: String {
+            switch self {
+            case .reminders: return "bell.fill"
+            case .focus:     return "timer"
+            case .character: return "figure.wave"
+            case .stats:     return "chart.bar.fill"
+            case .general:   return "gearshape.fill"
+            #if AITWIN_DEV
+            case .developer: return "hammer.fill"
+            #endif
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .reminders: return "Water, eyes, posture"
+            case .focus:     return "Sessions and chatter"
+            case .character: return "Look and message style"
+            case .stats:     return "Streaks and history"
+            case .general:   return "Name, startup, quiet hours"
+            #if AITWIN_DEV
+            case .developer: return "Previews and sample data"
+            #endif
+            }
+        }
+    }
+
+    public var body: some View {
+        HStack(spacing: 0) {
+            sidebar
+            Divider()
+            detail
+        }
+        .frame(width: 720, height: 540)
+    }
+
+    private var sidebar: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // A single identity line, so the window says whose settings these are.
+            HStack(spacing: 9) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(Color.accentColor)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("AiTwin").font(.system(size: 13, weight: .semibold))
+                    Text(model.settings.characterPackName)
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 14)
+            .padding(.bottom, 12)
+
+            ForEach(Section.allCases) { item in
+                SidebarRow(section: item, isSelected: section == item)
+                    .onTapGesture { section = item }
+            }
+
+            Spacer()
+
+            if model.currentStreak > 0 {
+                HStack(spacing: 6) {
+                    Text("🔥").font(.system(size: 13))
+                    Text("\(model.currentStreak) day streak")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 14)
+                .padding(.bottom, 14)
+            }
+        }
+        .frame(width: 208)
+        .background(.regularMaterial)
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(section.title).font(.system(size: 17, weight: .semibold))
+                Text(section.subtitle).font(.caption).foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 18)
+            .padding(.bottom, 10)
+
+            Divider()
+
+            switch section {
+            case .reminders: RemindersSettingsTab(model: model)
+            case .focus:     FocusSettingsTab(model: model)
+            case .character: CharacterSettingsTab(model: model)
+            case .general:   GeneralSettingsTab(model: model)
+            #if AITWIN_DEV
+            case .developer: DeveloperSettingsTab(model: model)
+            #endif
+            case .stats:
+                StatsView(
+                    log: model.activityLog,
+                    streak: model.currentStreak,
+                    best: model.bestStreak,
+                    intake: model.settings.water,
+                    onExport: { model.onExportHistory?() }
+                )
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct SidebarRow: View {
+    let section: SettingsView.Section
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 9) {
+            Image(systemName: section.icon)
+                .font(.system(size: 12))
+                .frame(width: 18)
+                .foregroundStyle(isSelected ? .white : Color.accentColor)
+            Text(section.title)
+                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                .foregroundStyle(isSelected ? .white : .primary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(isSelected ? Color.accentColor : Color.clear)
+        )
+        .padding(.horizontal, 8)
+        .contentShape(Rectangle())
     }
 }
 
@@ -41,13 +192,23 @@ struct RemindersSettingsTab: View {
                 )
                 .disabled(!model.settings.waterEnabled)
 
-                Stepper(
-                    "Daily goal: \(model.settings.dailyWaterGoal) glasses",
-                    value: $model.settings.dailyWaterGoal,
-                    in: 1...20
-                )
+                Picker("One glass is", selection: $model.settings.water.glassSize) {
+                    ForEach(WaterIntake.glassSizeChoices, id: \.self) { size in
+                        Text("\(size) ml").tag(size)
+                    }
+                }
+                Picker("Daily goal", selection: $model.settings.water.dailyGoal) {
+                    ForEach(WaterIntake.goalChoices, id: \.self) { goal in
+                        Text(WaterIntake.format(millilitres: goal)).tag(goal)
+                    }
+                }
+                Text("That's \(model.settings.water.glassesForGoal) glasses a day — about one every \(Int(model.settings.waterInterval / 60)) minutes while you're at the Mac.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
 
+            // One section, not two: the reminder and the break it starts are a
+            // single behaviour, and splitting them made the settings read as if
+            // there were two separate eye features.
             Section("Eye breaks") {
                 Toggle("Remind me to rest my eyes", isOn: $model.settings.eyeBreakEnabled)
                 IntervalPicker(
@@ -56,31 +217,30 @@ struct RemindersSettingsTab: View {
                     choices: model.choices(including: model.settings.eyeBreakInterval)
                 )
                 .disabled(!model.settings.eyeBreakEnabled)
-            }
-
-            Section("Eye break") {
-                Toggle("Dim the screen during the break", isOn: $model.settings.dimsScreenOnBreak)
-                Text("Tapping \"Looked away\" starts a timer and dims your screen, so you actually rest your eyes instead of dismissing a message.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
 
                 Picker("Break lasts", selection: $model.settings.eyeBreakDuration) {
                     ForEach(BreakCountdown.durationChoices, id: \.self) { seconds in
                         Text(BreakCountdown.durationName(seconds)).tag(seconds)
                     }
                 }
-                .disabled(!model.settings.dimsScreenOnBreak)
+                .disabled(!model.settings.eyeBreakEnabled)
+
+                Toggle("Dim the screen for the break", isOn: $model.settings.dimsScreenOnBreak)
+                    .disabled(!model.settings.eyeBreakEnabled)
 
                 VStack(alignment: .leading) {
                     Slider(value: $model.settings.dimOpacity, in: 0.3...0.92) {
-                        Text("Dim level")
+                        Text("How dark")
                     }
-                    Text("\(Int(model.settings.dimOpacity * 100))% — the screen only dims, it never blocks clicks or typing.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    Text("\(Int(model.settings.dimOpacity * 100))% — dimming only. It never blocks clicks or typing.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .disabled(!model.settings.dimsScreenOnBreak)
+                .disabled(!model.settings.eyeBreakEnabled || !model.settings.dimsScreenOnBreak)
+
+                Text("Tapping “Looked away” starts the timer and dims your screen, so you actually rest your eyes instead of dismissing a message.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
+
 
             Section("When you are away") {
                 Toggle("Only count time I'm actually using the Mac", isOn: $model.settings.pauseWhenIdle)
@@ -114,7 +274,6 @@ struct CharacterSettingsTab: View {
                         Text(name).tag(name)
                     }
                 }
-                Toggle("Wearing glasses", isOn: $model.settings.wearsGlasses)
 
                 VStack(alignment: .leading) {
                     Slider(value: $model.settings.characterHeight, in: 64...256, step: 8) {
@@ -199,16 +358,6 @@ struct GeneralSettingsTab: View {
                     .disabled(!model.settings.quietHours.isEnabled)
             }
 
-            Section("Developer") {
-                Toggle("Test mode (allow 10s / 30s / 1m intervals)", isOn: $model.settings.testModeEnabled)
-                Text("Adds very short intervals to the pickers above. The reminder logic itself is unchanged — only the numbers differ.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                HStack {
-                    Button("Test Water Reminder") { model.onTestReminder?(.water) }
-                    Button("Test Eye Break") { model.onTestReminder?(.eyeBreak) }
-                }
-            }
         }
         .formStyle(.grouped)
     }

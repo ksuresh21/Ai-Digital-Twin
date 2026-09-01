@@ -70,43 +70,46 @@ Last updated: **2026-08-30**
 
 ## 🔜 Phase 1 — Launch
 
-Everything needed for a version people can actually use. Ordered; take from the top.
+**Substantially complete.** Streaks and stats, stretch reminders, focus sessions,
+idle chatter and iCloud sync all ship; two mood *triggers* remain.
+
+Everything needed for a version people can actually use.
 
 > **Sound is deliberately out of scope for now.** It moves to Phase 3 with voice.
 
 ### 1. Streaks and weekly stats
-- [ ] `StreakTracker` in Core — consecutive days the water goal was met
-- [ ] Menu bar: "🔥 4 day streak"
-- [ ] Current streak + best streak
-- [ ] Settings → Stats tab with a **7-day bar chart**: glasses drunk, eye breaks taken
-- [ ] **Breaks accepted vs snoozed vs ignored**, per day
-- [ ] Rolling history store (`UserDefaults` JSON, tolerant-decode pattern as settings)
-- [ ] Streak milestones (3 / 7 / 14 / 30 days) trigger the `cheer` animation
-- [ ] Streak survives one missed day gracefully — a single slip should not feel punitive
+- [x] `StreakTracker` in Core — consecutive days the water goal was met
+- [x] Menu bar: "🔥 4 day streak"
+- [x] Current streak + best streak
+- [x] Settings → Stats tab with a **7-day bar chart**: glasses drunk, eye breaks taken
+- [x] **Breaks accepted vs snoozed vs ignored**, per day
+- [x] Rolling history store (`UserDefaults` JSON, tolerant-decode pattern as settings)
+- [x] Streak milestones (3 / 7 / 14 / 30 days) trigger the `cheer` animation
+- [x] Streak survives one missed day gracefully — a single slip should not feel punitive
 
 > **Record everything from day one.** Focus minutes and skip counts cannot be
 > backfilled, so the store should capture them even before the views that show
 > them exist.
 
 ### 2. Posture and stretch reminders
-- [ ] Third `ReminderKind.stretch`, reusing the whole existing engine
-- [ ] Own interval (default 60 min), own enable toggle
-- [ ] New `stretch` clip; falls back to idle if a pack lacks it
-- [ ] Ten stretch messages, in the same rotating personalised style
+- [x] Third `ReminderKind.stretch`, reusing the whole existing engine
+- [x] Own interval (default 60 min), own enable toggle
+- [x] New `stretch` clip; falls back to idle if a pack lacks it
+- [x] Ten stretch messages, in the same rotating personalised style
 - [ ] Optional guided sequence — "roll your shoulders… now your neck" over ~30s
 
 ### 3. Focus sessions (Pomodoro)
-- [ ] Start from the menu bar: "Start Focus — 25 min"
-- [ ] Character sits and reads in a chair, **completely still**, at the corner
-- [ ] Session timer floats above her, ticking down
+- [x] Start from the menu bar: "Start Focus — 25 min"
+- [x] Character sits and reads in a chair, **completely still**, at the corner
+- [x] Session timer floats above her, ticking down
 - [ ] **All reminders suppressed during a focus session** — water included.
       A hydration nudge mid-flow is exactly the interruption you started the
       session to avoid
 - [ ] Break between sessions: she stands, stretches, suggests water
-- [ ] Session lengths configurable (25/45/50 min), and a long break every 4th
-- [ ] **Suppressed reminders are delivered in the break**, not dropped
-- [ ] New clips: `focus` (sitting, reading), and a chair prop
-- [ ] Sessions counted toward the weekly stats
+- [x] Session lengths configurable (25/45/50 min), and a long break every 4th
+- [x] **Suppressed reminders are delivered in the break**, not dropped
+- [x] New clips: `focus` (sitting, reading), and a chair prop
+- [x] Sessions counted toward the weekly stats
 
 > **Design note:** the character must not animate during focus beyond the
 > gentlest breathing loop. Movement in peripheral vision is exactly what breaks
@@ -114,12 +117,12 @@ Everything needed for a version people can actually use. Ordered; take from the 
 > idle at most.
 
 ### 4. Idle chatter
-- [ ] Occasional unprompted lines when nothing else is happening
-- [ ] Uses the **`peek`** pose — half-hidden at the screen edge, no full entrance
-- [ ] Its own pool of ten, context-aware (time of day, streak, session length)
-- [ ] **Default: rare** — at most once every ~90 minutes, often less
-- [ ] Frequency setting: Off / Rare / Occasional
-- [ ] **Rate limited hard** — see the note below
+- [x] Occasional unprompted lines when nothing else is happening
+- [x] Uses the **`peek`** pose — half-hidden at the screen edge, no full entrance
+- [x] Its own pool of ten, context-aware (time of day, streak, session length)
+- [x] **Default: rare** — at most once every ~90 minutes, often less
+- [x] Frequency setting: Off / Rare / Occasional
+- [x] **Rate limited hard** — see the note below
 
 > **"Rate limited hard" means:** a strict ceiling on how often she may speak
 > unprompted — at most once every ~90 minutes, never twice in a row, never
@@ -133,19 +136,22 @@ Four new poses, each tied to a behaviour rather than added for their own sake.
 Art prompts 16–19 are written; the clips are already registered in the loader
 and the importer.
 
-- [ ] **Concerned** — after a long stretch with no break, or several skips in a
-      row. Tone is caring, never scolding; a companion that induces guilt gets quit
-- [ ] **Proud / cheering** — streak milestones and completed focus sets only, so
-      it stays special. Everyday goal celebrations keep using `happy`
-- [ ] **Peeking** — half-hidden at the screen edge. This is what makes idle
-      chatter unintrusive: she can say something small without walking in
-- [ ] **Sleepy / yawning** — late nights and very long sessions, nudging you to stop
+- [x] **Art imported and normalised** for all four, plus `focus`, `stretch` and `sitting`
+- [x] **Proud / cheering** — plays on streak milestones (3/7/14/30/100 days)
+- [x] **Peeking** — drives idle chatter, so she speaks without walking in
+- [x] **Every mood previewable** from Settings → General → Developer
+- [x] **Concerned** — fires after 3 reminders waved away in a row, or 3 hours of
+      unbroken screen time. Accepting one clears the slate
+- [x] **Sleepy / yawning** — fires after 23:00, or a 5-hour session at any hour.
+      Sleepiness outranks concern, since "go to bed" is the more useful line at 1am
+- [x] Both share a 2-hour cooldown and the same veto list as chatter
 
-### 6. iCloud sync
-- [ ] Settings and streaks sync via `NSUbiquitousKeyValueStore`
-- [ ] Last-write-wins with a timestamp; no merge UI
-- [ ] Works offline and syncs later — never blocks the app
-- [ ] Character packs stay local (too large, and picked per-machine)
+### 6. iCloud sync — **dropped**
+
+Built, then set aside on 2026-08-31: it cannot be verified without a paid
+developer account, and it is not worth carrying unverified code. `CloudSyncStore`
+and `ActivityLog.merged(with:)` remain in the tree, unused by the app, if it is
+ever picked back up.
 
 ### 7. Apple Health — investigated, parked
 
@@ -243,7 +249,32 @@ seam that would make it possible.
 
 ---
 
+## 🎨 Entrance policy — what walks and what doesn't
+
+Walking is reserved for **"I have come over to tell you something"**. Everything
+else appears where it belongs. Walking the full width of the screen for a
+spontaneous hello reads as laboured, and repeating it for every event was the
+single biggest thing making her feel mechanical.
+
+| Moment | Entrance | Why |
+|---|---|---|
+| Water / eye-break / stretch reminder | **Walks in** | She is coming over with a purpose. The journey is the point |
+| Greeting | Pops in at the corner | A hello is spontaneous; you do not walk across a room to wave |
+| Goal / streak celebration | Pops in | Same — it is a reaction, not an errand |
+| Focus session | Pops in, then sits | She settles in beside you; walking would break the calm |
+| **Idle chatter** | **Leans in from the screen edge** | Half-hidden, brief, withdrawn the same way. The least intrusive arrival there is |
+| Mood preview (Settings) | Pops in | It is a test, not a performance |
+
+## 🛠 Development vs production
+
+Developer tooling is excluded from release builds **by compilation** — see
+[DEVELOPMENT.md](DEVELOPMENT.md). `./Scripts/build-app.sh` is production;
+`--dev` adds the Developer tab and sample data. Verified by inspecting the
+binary, not assumed.
+
 ## 🐛 Known issues
+
+- [ ] Nothing outstanding from Phase 1.
 
 - [ ] Nish pack: `wave`, `drink` and `sleep` were regenerated after data loss;
       alignment is good but worth a second look if any pose sits oddly.
@@ -259,6 +290,99 @@ seam that would make it possible.
       never appeared locally.
 
 ## ✔️ Fixed
+
+**Round 2, 2026-08-31**
+
+- [x] **Water is measured in millilitres.** A glass is not a unit, so the goal is
+      a volume (default 3 L) and the glass size converts it (default 250 ml)
+- [x] **Character sizes normalised properly.** Two earlier attempts used face
+      width, which expression confounds. Waist-to-feet is unaffected by hair or
+      expression, and showed the clips you approved had 16% longer legs than
+      idle — so idle was the small one. Everything now lands within 270–273px
+- [x] **Top corners no longer sit low.** The panel reserves 150pt above the
+      character for the cloud; at a top corner that reserve was between her and
+      the screen edge. She now anchors to the top with the cloud below her
+- [x] **Any pack installs without Python.** `PackGeometry` in Core does the
+      arithmetic, `PackInstaller` in Mac reads pixels and writes files. Verified
+      with three clips drawn at three different zooms: all came out within 1px
+- [x] **Drag a `.zip` onto Settings → Character** to install a character
+- [x] **History exports as CSV** — 13 columns, volumes in millilitres
+- [x] Glasses feature removed entirely, including the variant-clip machinery
+- [x] Stretch no longer sits down first; milestones are wordless; concern waits
+      for an answer instead of leaving on a timer
+- [x] The two eye-break settings sections merged into one
+- [x] Menu bar leads with Focus
+- [x] Settings ordered General, Reminders, Focus, Character, Progress, Developer
+
+**Code review, 2026-08-31 — all nine findings**
+
+- [x] Streak messages always read "0 days" — `pick` expanded the template before
+      the day count was applied, so the second pass had nothing left to replace
+- [x] A focus break could never leave `.focusing`, so the session's own
+      celebration never played and reminders released at the break were sent to
+      a state that ignored them and were then logged as *ignored*
+- [x] `silentCelebration` latched on when the water goal was hit, muting the
+      *next* celebration entirely
+- [x] A running routine overwrote the walk clip mid-exit, so she left in an idle pose
+- [x] Starting a focus session while she was on screen never reached `.focusing`
+- [x] Merging history took `max(waterGoal)`, which let a goal raised on another
+      Mac retroactively un-meet a finished day and break an earned streak
+- [x] iCloud sync is parked, so it no longer runs: that removes the merge-order
+      bug, the vacuous last-write-wins stamp, and two writes per slider tick to
+      a rate-limited store
+
+**Artwork and interface**
+
+- [x] `concerned` and `yawn` rendered ~11% small — more hair volume meant the
+      same bounding box held a smaller body. Rescaled to match, measured by face
+      width rather than by eye
+- [x] `cheer`'s jump frames were cropped at the top. The canvas was sized by each
+      clip's *height*, but a clip is aligned by its lowest point, so a jump sits
+      higher than its height suggests. Canvas is now sized by full reach, and the
+      importer shrinks a clip as a fallback rather than guillotining it
+- [x] `cheer` was also oversized: its tallest frame is a standing pose, so the
+      headroom hint that suited arms-overhead poses inflated the whole clip
+- [x] Menu bar opened with five greyed-out info rows before any action. Now
+      actions only, with the countdowns behind a Status submenu where every row
+      is live
+- [x] Menu shortcuts removed — they implied global hotkeys but only fired while
+      the menu was open
+- [x] Developer tab rebuilt as an inventory: every reminder, every routine with
+      its clip chain, every pose, labelled by what triggers it in real use
+
+- [x] **The character had shrunk 15%.** Growing the canvas to fit tall poses made
+      everything smaller, because the app scaled frames by *canvas* height. Packs
+      now ship a `pack.json` saying what share of the frame the character fills,
+      and the app scales by that — so headroom for a jump costs nothing, and the
+      size slider finally means her actual height
+- [x] **The thought cloud sat through her head when she jumped.** It was anchored
+      to the character height rather than the frame, so a reach or a jump put her
+      hands behind it. Now cleared above the whole frame
+- [x] **Poses with raised arms were cropped in the artwork.** Canvas height is
+      computed from the tallest pose across the pack
+- [x] **`happy` was headless** — it had been rebuilt from an already-cropped
+      intermediate. Re-imported from the original artwork
+- [x] **Previews appeared to do nothing.** Setting a window position did not
+      cancel an in-flight walk, so anything summoned while she was walking off
+      got dragged off screen with her. `setPosition` now cancels the walk
+- [x] **Peek appeared mid-screen and tiny.** It is drawn hugging a vertical
+      border, so it now hugs the canvas edge, is sized to head-and-torso rather
+      than a whole body, and the window sits flush against the display edge
+- [x] **She froze instead of walking.** The walk's own per-frame update called
+      the public `setPosition`, which cancels a walk — so the first frame of
+      every walk cancelled the walk it belonged to. She moved one pixel and
+      stopped. Now guarded by a real-window regression test that fails with two
+      distinct positions when the bug is reintroduced
+- [x] **She stopped walking off screen.** The peek flag latched on after the
+      first idle chatter, so every later exit became a 46-point slide
+- [x] **The cloud floated 50 points above her head.** It cleared the whole frame,
+      which carries headroom only a jump uses. Each clip now records where its
+      art starts, and the cloud hugs that pose
+- [x] **Multi-pose behaviours are choreographed in code** rather than baked into
+      artwork — stretching is sit → stand → reach, finishing a focus session is
+      look up → stand → cheer
+- [x] **Settings was a row of six tabs.** Replaced with a sidebar: every section
+      visible at once, named, one click instead of two
 
 - [x] Eye break is a full minute by default, and she vanishes when it ends
       rather than walking back across the screen

@@ -12,6 +12,12 @@ struct ReminderEngineTests {
     ) -> (ReminderEngine, FakeClock, EventRecorder) {
         let clock = FakeClock()
         let recorder = EventRecorder()
+        var settings = settings
+        // Stretch is a third reminder kind; tests that predate it isolate on
+        // water and eye breaks, so keep it quiet unless a test enables it.
+        if settings.stretchInterval == AiTwinSettings.defaults.stretchInterval {
+            settings.stretchEnabled = false
+        }
         let engine = ReminderEngine(
             settings: settings,
             configuration: configuration,
@@ -134,7 +140,7 @@ struct ReminderEngineTests {
     @Test("reaching the daily goal is reported exactly once")
     func goalReachedOnce() {
         var settings = AiTwinSettings.defaults
-        settings.dailyWaterGoal = 2
+        settings.water = WaterIntake(glassSize: 250, dailyGoal: 500)
         let (engine, _, recorder) = makeEngine(settings: settings)
         engine.start()
 
@@ -437,6 +443,7 @@ struct ReminderEngineTests {
 
         settings.waterEnabled = false
         settings.eyeBreakEnabled = false
+        settings.stretchEnabled = false
         engine.apply(settings)
 
         clock.advance(10 * 3600)

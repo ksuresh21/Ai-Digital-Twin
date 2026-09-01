@@ -66,84 +66,119 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         menu.removeAllItems()
         let settings = coordinator.currentSettings
 
-        // Status
-        menu.addItem(statusHeader())
-        for kind in ReminderKind.allCases where settings.isEnabled(kind) {
-            menu.addItem(countdownItem(for: kind))
-        }
+        // Actions only. This menu used to open with five disabled info rows —
+        // a status line, three countdowns and a water tally — which macOS greys
+        // out because they are not clickable. Five grey lines before anything
+        // you can press is a worse first impression than no information at all,
+        // so the numbers moved into a Status item you can open when you want
+        // them, and everything at this level does something.
 
-        // Water progress
-        let log = coordinator.waterLog
-        let waterItem = NSMenuItem(
-            title: "Water today: \(log.glasses) / \(settings.dailyWaterGoal)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        waterItem.isEnabled = false
-        menu.addItem(waterItem)
+        // Focus leads: it is the only item you open the menu specifically to
+        // use. Everything below it is a small correction to what the app is
+        // already doing on its own.
+        if let focus = coordinator.focusSession {
+            let stop = NSMenuItem(
+                title: "End \(focus.phase.displayName) — \(focus.clockText(at: Date())) left",
+                action: #selector(stopFocus), keyEquivalent: ""
+            )
+            stop.target = self
+            menu.addItem(stop)
+
+            let skip = NSMenuItem(title: "Skip to Next Phase", action: #selector(skipFocus), keyEquivalent: "")
+            skip.target = self
+            menu.addItem(skip)
+        } else {
+            let start = NSMenuItem(
+                title: "Start Focus — \(Int(settings.focusSessionLength / 60)) min",
+                action: #selector(startFocus), keyEquivalent: ""
+            )
+            start.target = self
+            menu.addItem(start)
+        }
 
         menu.addItem(.separator())
 
         let logWater = NSMenuItem(
-            title: "I drank a glass  +1",
-            action: #selector(logWaterTapped),
-            keyEquivalent: "w"
+            title: "I drank a glass  (\(settings.water.glassSize) ml)",
+            action: #selector(logWaterTapped), keyEquivalent: ""
         )
         logWater.target = self
         menu.addItem(logWater)
 
         let pause = NSMenuItem(
             title: settings.remindersPaused ? "Resume Reminders" : "Pause Reminders",
-            action: #selector(togglePause),
-            keyEquivalent: "p"
+            action: #selector(togglePause), keyEquivalent: ""
         )
         pause.target = self
         menu.addItem(pause)
 
-        // Remind me now
         let remindNow = NSMenuItem(title: "Remind Me Now", action: nil, keyEquivalent: "")
-        let submenu = NSMenu()
-        for kind in ReminderKind.allCases {
+        let remindMenu = NSMenu()
+        for kind in ReminderKind.allCases where settings.isEnabled(kind) {
             let item = NSMenuItem(title: kind.displayName, action: #selector(triggerReminder(_:)), keyEquivalent: "")
             item.target = self
             item.representedObject = kind.rawValue
-            submenu.addItem(item)
+            remindMenu.addItem(item)
         }
-        remindNow.submenu = submenu
+        remindNow.submenu = remindMenu
         menu.addItem(remindNow)
 
-        menu.addItem(.separator())
 
-        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        // The countdowns live behind this rather than sitting greyed out above
+        // the actions. Open it and every row is live text, not disabled chrome.
+        menu.addItem(.separator())
+        let status = NSMenuItem(title: "Status", action: nil, keyEquivalent: "")
+        status.submenu = statusMenu()
+        menu.addItem(status)
+
+        let settingsItem = NSMenuItem(title: "Settings…", action: #selector(openSettings), keyEquivalent: "")
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let quit = NSMenuItem(title: "Quit AiTwin", action: #selector(quit), keyEquivalent: "q")
+        let quit = NSMenuItem(title: "Quit AiTwin", action: #selector(quit), keyEquivalent: "")
         quit.target = self
         menu.addItem(quit)
     }
 
-    /// One line explaining why the app is or is not counting down. Without it,
-    /// "quiet hours" and "you stepped away" look identical to "it broke".
-    private func statusHeader() -> NSMenuItem {
-        let title: String
-        switch coordinator.holdReason {
-        case .paused:     title = "Paused"
-        case .quietHours: title = "Quiet hours — staying quiet"
-        case .userIdle:   title = "You're away — timers on hold"
-        case .none:       title = "Watching over you"
-        }
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
-    }
+    /// The numbers, on request. Every row here is enabled, so nothing is greyed:
+    /// selecting one simply opens Settings where you can change it.
+    private func statusMenu() -> NSMenu {
+        let menu = NSMenu()
+        let settings = coordinator.currentSettings
 
-    private func countdownItem(for kind: ReminderKind) -> NSMenuItem {
-        let remaining = coordinator.timeRemaining(for: kind)
-        let title = "Next \(kind.displayName.lowercased()): \(Self.format(remaining))"
-        let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
-        item.isEnabled = false
-        return item
+        let headline = coordinator.holdReason?.displayName ?? "Watching over you"
+        let header = NSMenuItem(title: headline, action: #selector(openSettings), keyEquivalent: "")
+        header.target = self
+        menu.addItem(header)
+        menu.addItem(.separator())
+
+        for kind in ReminderKind.allCases where settings.isEnabled(kind) {
+            let item = NSMenuItem(
+                title: "Next \(kind.displayName.lowercased()) in \(Self.format(coordinator.timeRemaining(for: kind)))",
+                action: #selector(openSettings), keyEquivalent: ""
+            )
+            item.target = self
+            menu.addItem(item)
+        }
+
+        let log = coordinator.waterLog
+        let water = NSMenuItem(
+            title: "Water today: \(settings.water.summary(glasses: log.glasses))",
+            action: #selector(openSettings), keyEquivalent: ""
+        )
+        water.target = self
+        menu.addItem(water)
+
+        let streak = coordinator.currentStreak
+        if streak > 0 {
+            let item = NSMenuItem(
+                title: "🔥 \(streak) day streak",
+                action: #selector(openSettings), keyEquivalent: ""
+            )
+            item.target = self
+            menu.addItem(item)
+        }
+        return menu
     }
 
     static func format(_ interval: TimeInterval?) -> String {
@@ -169,6 +204,18 @@ final class MenuBarController: NSObject, NSMenuDelegate {
         guard let raw = sender.representedObject as? String,
               let kind = ReminderKind(rawValue: raw) else { return }
         coordinator.triggerReminder(kind)
+    }
+
+    @objc private func startFocus() {
+        coordinator.startFocusSession()
+    }
+
+    @objc private func stopFocus() {
+        coordinator.stopFocusSession()
+    }
+
+    @objc private func skipFocus() {
+        coordinator.skipFocusPhase()
     }
 
     @objc private func openSettings() {

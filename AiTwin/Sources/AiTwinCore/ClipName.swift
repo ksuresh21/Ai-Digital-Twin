@@ -2,13 +2,11 @@ import Foundation
 
 /// The animation clips the app asks for by name.
 ///
-/// The spec listed seven "animation states" including `glasses_on` and
-/// `glasses_off`. Those two are not states -- glasses are orthogonal to what the
-/// character is *doing*, so modelling them as states would require an idle,
-/// walk, wave, drink and eye-break variant of each, i.e. twice the clips for one
-/// boolean. They are handled instead as a *variant suffix* on any clip
-/// (`idle_glasses`), resolved with a fallback to the base clip, so a character
-/// pack that ships no glasses art simply never wears them.
+/// The original spec listed `glasses_on` and `glasses_off` as animation states.
+/// They were built as a variant layer and then removed: the glasses only ever
+/// existed to signal the eye-break reminder, which the dimmed screen and the
+/// countdown now do far better, and carrying a second copy of every clip for a
+/// cosmetic toggle nobody used was not worth it.
 public enum ClipName {
     public static let idle = "idle"
     public static let walk = "walk"
@@ -29,6 +27,8 @@ public enum ClipName {
     public static let peek = "peek"
     /// Yawning, for late nights and very long sessions.
     public static let yawn = "yawn"
+    /// Sitting idle on a chair. Optional variety.
+    public static let sitting = "sitting"
 
     /// Clips whose absence is worth reporting in Settings.
     ///
@@ -39,10 +39,8 @@ public enum ClipName {
     public static let all: [String] = [idle, walk, wave, waterReminder, eyeBreak, sleep, happy]
 
     /// Everything the loader knows how to read, including not-yet-used clips.
-    public static let loadable: [String] = all + [focus, stretch, concerned, cheer, peek, yawn]
+    public static let loadable: [String] = all + [focus, stretch, concerned, cheer, peek, yawn, sitting]
 
-    /// The glasses-wearing variant of a clip name.
-    public static func glassesVariant(of clip: String) -> String { "\(clip)_glasses" }
 }
 
 /// Where a clip's frames live on disk and how they are named.
@@ -81,5 +79,6 @@ public struct ClipDefinition: Equatable, Sendable {
         ClipDefinition(name: ClipName.cheer,          folder: "Cheer",          filePrefix: "cheer",    loops: false),
         ClipDefinition(name: ClipName.peek,           folder: "Peek",           filePrefix: "peek",     loops: true),
         ClipDefinition(name: ClipName.yawn,           folder: "Yawn",           filePrefix: "yawn",     loops: false),
+        ClipDefinition(name: ClipName.sitting,        folder: "Sitting",        filePrefix: "sitting",  loops: true),
     ]
 }

@@ -35,6 +35,13 @@ final class AppCoordinator {
     /// Shared with the engine so reminder lines and greetings draw from one
     /// non-repeating catalogue.
     private let catalog = MessageCatalog()
+    private var focus: FocusController!
+    private var chatter = ChatterScheduler()
+    private var moods = MoodMonitor()
+    private var focusTicker: Timer?
+    /// Plays multi-clip routines — sitting, standing, then stretching — so a
+    /// behaviour can be choreographed in code rather than baked into one clip.
+    private let sequencePlayer = SequencePlayer()
 
     // UI
     let companionModel = CompanionViewModel()
@@ -78,11 +85,15 @@ final class AppCoordinator {
             configuration: configuration,
             clock: SystemClock(),
             catalog: catalog,
-            waterLogStore: UserDefaultsWaterLogStore()
+            waterLogStore: UserDefaultsWaterLogStore(),
+            activityLogStore: UserDefaultsActivityLogStore()
         )
         self.windowManager = MacWindowManager(
             size: CompanionLayout.panelSize(characterHeight: settings.characterHeight)
         )
+        self.focus = FocusController(settings: settings, clock: SystemClock())
+        self.chatter = ChatterScheduler(frequency: settings.chatterFrequency)
+        self.moods = MoodMonitor(thresholds: settings.moodThresholds)
     }
 
     // MARK: Startup
@@ -94,10 +105,17 @@ final class AppCoordinator {
         wireCallbacks()
 
         companionModel.characterHeight = settings.characterHeight
+        companionModel.frameHeight = frameHeight
+        companionModel.anchorsToTop = !settings.corner.isBottom
         companionModel.bubbleStyle = settings.bubbleStyle
         engine.start()
         startEngineTimer()
         wakeObserver.start()
+        // iCloud sync is parked -- see Docs/ROADMAP.md. It cannot be verified
+        // without a paid developer account, and leaving it running meant a
+        // write to a rate-limited store on every slider tick, plus a merge
+        // order that could overwrite newer remote history with older local.
+        // CloudSyncStore stays in the tree, unused, if it is picked back up.
 
         if settings.greetOnLaunch {
             greet(catalog.nextGreeting(for: Date(), name: settings.userName))
@@ -126,7 +144,7 @@ final class AppCoordinator {
         // character and turned her walk-out into a diagonal.
         hosting.sizingOptions = []
         windowManager.setContentView(hosting)
-        windowManager.setSize(CompanionLayout.panelSize(characterHeight: settings.characterHeight))
+        windowManager.setSize(panelSize)
     }
 
     private func wireCallbacks() {
@@ -138,6 +156,12 @@ final class AppCoordinator {
         }
         screenProvider.onScreenConfigurationChange = { [weak self] in
             MainActor.assumeIsolated { self?.handleScreenChange() }
+        }
+        focus.onPhaseChange = { [weak self] session in
+            MainActor.assumeIsolated { self?.handleFocusPhase(session) }
+        }
+        focus.onSessionCompleted = { [weak self] minutes in
+            MainActor.assumeIsolated { self?.engine.recordFocusSession(minutes: minutes) }
         }
         wakeObserver.onWake = { [weak self] in
             MainActor.assumeIsolated { self?.handleWake() }
@@ -155,19 +179,52 @@ final class AppCoordinator {
     private func handle(_ event: ReminderEvent) {
         switch event {
         case .reminderDue(let kind, let message):
+            chatter.noteReminder(at: Date())
             pendingMessage = message
             stateMachine.handle(.summon(.reminder(kind)))
 
-        case .reminderAcknowledged, .reminderSnoozed:
+        case .reminderAcknowledged(let kind):
+            moods.noteAccepted(at: Date())
+            if kind == .water {
+                // Logging the glass may already have triggered a goal or streak
+                // celebration, which has words and outranks this. Only claim the
+                // wordless jump if nothing else took the moment -- otherwise the
+                // flag latched on and muted the *next* celebration instead.
+                if stateMachine.state == .celebrating {
+                    break
+                }
+                celebrationRoutine = .waterLoggedRoutine
+                pendingMessage = nil
+                silentCelebration = true
+                if stateMachine.handle(.summon(.celebration)) != .celebrating {
+                    silentCelebration = false
+                    stateMachine.handle(.reminderResolved)
+                }
+            } else if stateMachine.state != .onBreak {
+                // Never while a break is running: resolving would walk her off
+                // and leave the screen dimmed with no countdown.
+                stateMachine.handle(.reminderResolved)
+            }
+
+        case .reminderSnoozed:
+            moods.noteSkipped()
             stateMachine.handle(.reminderResolved)
 
         case .reminderTimedOut:
+            moods.noteSkipped()
             // Nobody was there. Leave quietly.
             stateMachine.handle(.reminderResolved)
 
         case .waterLogged(let glasses, let goal, let goalJustReached):
             if goalJustReached {
-                celebrate(catalog.nextGoalMessage(name: settings.userName))
+                // A milestone outranks the everyday goal line.
+                if engine.streakMilestoneReachedToday() != nil {
+                    // Wordless: the jump is the message.
+                    silentCelebration = true
+                    celebrate("", routine: .milestoneRoutine)
+                } else {
+                    celebrate(catalog.nextGoalMessage(name: settings.userName))
+                }
             }
             onWaterCountChanged?(glasses, goal)
         }
@@ -186,9 +243,24 @@ final class AppCoordinator {
         stateTimer?.invalidate()
         stateTimer = nil
 
+        // Only a focus session shows a clock in the cloud, and .focusing sets
+        // it again immediately. Clearing here means no other state can inherit
+        // a stale countdown.
+        companionModel.countdown = nil
+
+        // Clear the peek flag on entry to anything that is not the peek itself
+        // or its exit. Without this it latched on after the first idle chatter,
+        // and every subsequent walk-out became a 46-point slide -- she simply
+        // stopped leaving the screen.
+        switch state {
+        case .chattering, .leaving: break
+        default: wasPeeking = false
+        }
+
         switch state {
         case .hidden:
             stopAnimation()
+            stopSequence()
             endBreak()
             windowManager.setInteractive(false)
             companionModel.bubble = nil
@@ -220,7 +292,7 @@ final class AppCoordinator {
             // single time reads as repetitive, and a spontaneous hello is not
             // something you cross the screen to deliver.
             facing = settings.corner.entryFacing
-            applyClip(named: purpose == .greeting ? ClipName.wave : ClipName.happy)
+            applyClip(named: Self.entranceClip(for: purpose, celebration: celebrationRoutine))
             companionModel.bubble = nil
             windowManager.setInteractive(false)
             windowManager.setPosition(restingOrigin())
@@ -233,19 +305,117 @@ final class AppCoordinator {
             }
             scheduleStateEvent(.arrivedAtCorner, after: configuration.popDuration)
 
+        case .previewingSequence(let name):
+            guard let routine = ClipSequence.named(name) else {
+                stateMachine.handle(.restTimeout)
+                return
+            }
+            play(routine)
+            companionModel.bubble = CompanionViewModel.Bubble(
+                message: "\(name)  ·  \(routine.steps.count) beats"
+            )
+            windowManager.setInteractive(false)
+            // An indefinite routine has no natural end, so cap the preview.
+            let span = routine.duration > 0 ? routine.duration + 1 : configuration.previewDuration
+            scheduleStateEvent(.restTimeout, after: span)
+
+        case .previewing(let clip):
+            stopSequence()
+            // Settings → Developer plays a named clip so new art can be checked
+            // without waiting for the situation that triggers it.
+            applyClip(named: clip)
+            let available = pack?.clips[clip] != nil
+            companionModel.bubble = CompanionViewModel.Bubble(
+                message: available ? clip : "\(clip) — no art, using idle"
+            )
+            windowManager.setInteractive(false)
+            scheduleStateEvent(.restTimeout, after: configuration.previewDuration)
+
+        case .feeling(let mood):
+            applyClip(named: mood.clipName)
+            switch mood {
+            case .concerned:
+                // She walked over to say this, so it gets an answer -- and then
+                // she marches off rather than drifting away.
+                companionModel.bubble = CompanionViewModel.Bubble(
+                    message: pendingMessage ?? "You okay?",
+                    primaryTitle: "I'm okay",
+                    showsSnooze: false
+                )
+                windowManager.setInteractive(true)
+                // She waits for an answer rather than leaving on a timer, and
+                // goes off happy once she has one -- she came to check on you,
+                // not to tell you off.
+                scheduleStateEvent(.restTimeout, after: configuration.reminderTimeout * 2)
+            case .sleepy:
+                companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "…")
+                windowManager.setInteractive(false)
+                // Yawn, then settle: two beats, not one animation.
+                play(.sleepRoutine)
+                scheduleStateEvent(isNight() ? .fellAsleep : .restTimeout,
+                                   after: configuration.greetingDuration + 1.5)
+            }
+            pendingMessage = nil
+
+        case .sleeping:
+            // The sleep routine parks on its final beat; release it so she is
+            // properly asleep rather than mid-yawn.
+            sequencePlayer.release(at: Date())
+            applyClip(named: ClipName.sleep)
+            companionModel.bubble = nil
+            windowManager.setInteractive(false)
+            scheduleStateEvent(.restTimeout, after: configuration.sleepDuration)
+
+        case .chattering:
+            // Leans in from the very edge of the display rather than walking on
+            // or popping up mid-screen. The peeking artwork is drawn against a
+            // vertical border, so it only makes sense flush to the screen edge.
+            wasPeeking = true
+            facing = settings.corner.isLeft ? .right : .left
+            applyClip(named: ClipName.peek)
+            companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "👋")
+            pendingMessage = nil
+            windowManager.setInteractive(false)
+            let resting = peekOrigin()
+            windowManager.setPosition(CharacterPlacement.peekEntryOrigin(
+                corner: settings.corner, size: panelSize,
+                visibleFrame: visibleFrame, offset: configuration.peekSlideDistance,
+                screenFrame: screenFrame
+            ))
+            windowManager.show()
+            startAnimation()
+            windowManager.move(to: resting, duration: 0.45) { }
+            // Bounded: she peeks, says her piece and withdraws.
+            scheduleStateEvent(.restTimeout, after: configuration.chatterDuration)
+
+        case .focusing:
+            applyClip(named: ClipName.focus)
+            windowManager.setInteractive(true)
+            updateFocusBubble()
+
         case .onBreak:
             applyClip(named: ClipName.eyeBreak)
             windowManager.setInteractive(true)
             startBreak()
 
         case .greeting:
-            applyClip(named: ClipName.wave)
+            play(.greetingRoutine)
             companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "Hi 👋")
             pendingMessage = nil
             scheduleStateEvent(.animationFinished, after: configuration.greetingDuration)
 
         case .celebrating:
-            applyClip(named: ClipName.happy)
+            play(celebrationRoutine)
+            let routine = celebrationRoutine
+            celebrationRoutine = .waterLoggedRoutine
+            if silentCelebration {
+                silentCelebration = false
+                companionModel.bubble = nil
+                pendingMessage = nil
+                windowManager.setInteractive(false)
+                scheduleStateEvent(.restTimeout, after: routine.duration)
+                return
+            }
             companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "Nice one 🎉")
             pendingMessage = nil
             windowManager.setInteractive(false)
@@ -258,7 +428,14 @@ final class AppCoordinator {
             scheduleStateEvent(.restTimeout, after: configuration.idleRestDuration)
 
         case .reminding(let kind):
-            applyClip(named: kind.clipName)
+            // A stretch reminder is a routine: sit, stand, reach. The point of
+            // the reminder is the getting up, so she demonstrates it.
+            if kind == .stretch {
+                play(.stretchRoutine)
+            } else {
+                stopSequence()
+                applyClip(named: kind.clipName)
+            }
             companionModel.bubble = CompanionViewModel.Bubble(
                 message: pendingMessage ?? kind.displayName,
                 primaryTitle: kind.acknowledgeTitle,
@@ -268,8 +445,26 @@ final class AppCoordinator {
             // The only moment in the app's life when clicks do not pass through.
             windowManager.setInteractive(true)
 
+        case .leaving where wasPeeking:
+            // Withdraw the way she arrived: a short slide back off the edge.
+            wasPeeking = false
+            stopSequence()
+            companionModel.bubble = nil
+            windowManager.setInteractive(false)
+            let exit = CharacterPlacement.peekEntryOrigin(
+                corner: settings.corner, size: panelSize,
+                visibleFrame: visibleFrame, offset: configuration.peekSlideDistance,
+                screenFrame: screenFrame
+            )
+            windowManager.move(to: exit, duration: 0.4) { [weak self] in
+                MainActor.assumeIsolated { _ = self?.stateMachine.handle(.exitedScreen) }
+            }
+
         case .leaving:
             endBreak()
+            // Stop any routine still running, or its next beat overwrites the
+            // walk clip mid-exit and she slides off in an idle pose.
+            stopSequence()
             companionModel.entranceProgress = 1
             applyClip(named: ClipName.walk)
             companionModel.bubble = nil
@@ -278,12 +473,30 @@ final class AppCoordinator {
             facing = settings.corner.entryFacing == .right ? .left : .right
             companionModel.facing = facing
             let exit = entryOrigin()
+            // She leaves a concern briskly -- a point made, then gone.
+            let speed = configuration.walkingSpeed * (hurriedExit ? configuration.hurriedExitMultiplier : 1)
+            hurriedExit = false
             let duration = CharacterPlacement.walkDuration(
-                from: windowManager.currentOrigin, to: exit, speed: configuration.walkingSpeed
+                from: windowManager.currentOrigin, to: exit, speed: speed
             )
             windowManager.move(to: exit, duration: duration) { [weak self] in
                 MainActor.assumeIsolated { _ = self?.stateMachine.handle(.exitedScreen) }
             }
+        }
+    }
+
+    /// The clip shown while materialising, chosen from why she was summoned.
+    private static func entranceClip(for purpose: SummonPurpose, celebration: ClipSequence) -> String {
+        switch purpose {
+        case .greeting:          return ClipName.wave
+        case .celebration:       return celebration.clips.first ?? ClipName.happy
+        case .chatter:           return ClipName.peek
+        case .focus:             return ClipName.focus
+        case .mood(let mood):    return mood.clipName
+        case .preview(let clip): return clip
+        case .previewSequence(let name):
+            return ClipSequence.named(name)?.clips.first ?? ClipName.idle
+        case .reminder(let k):   return k.clipName
         }
     }
 
@@ -303,14 +516,34 @@ final class AppCoordinator {
             stateMachine.handle(.breakFinished)
             return
         }
+        // "End" during a focus session stops the whole session.
+        if stateMachine.state == .focusing {
+            stopFocusSession()
+            return
+        }
+        // "I'm okay" — she is reassured, gives a quick happy beat, and goes.
+        if stateMachine.state == .feeling(.concerned) {
+            silentCelebration = true
+            celebrationRoutine = .waterLoggedRoutine
+            if stateMachine.handle(.summon(.celebration)) != .celebrating {
+                silentCelebration = false
+                stateMachine.handle(.restTimeout)
+            }
+            return
+        }
         guard let kind = engine.activeReminder else { return }
         let startsBreak = kind == .eyeBreak && settings.dimsScreenOnBreak && settings.eyeBreakDuration > 0
-        engine.acknowledge(kind)
+        // Order matters, and getting it wrong silently killed the whole eye
+        // break: `acknowledge` synchronously reports .reminderAcknowledged,
+        // which resolves the reminder and sends her walking off. By the time
+        // .breakStarted arrived the state was .leaving, the transition was
+        // rejected, and .onBreak -- the state that dims the screen and starts
+        // the countdown -- was never entered. So enter the break *first*,
+        // while she is still .reminding(.eyeBreak).
         if startsBreak {
-            // The engine has already scheduled the next cycle; now actually
-            // hold the user to the break they just agreed to.
             stateMachine.handle(.breakStarted)
         }
+        engine.acknowledge(kind)
     }
 
     private func snoozeActiveReminder() {
@@ -330,8 +563,16 @@ final class AppCoordinator {
         breakCountdown = countdown
         dimmer.dim(to: settings.dimOpacity, over: 0.8)
 
-        let message = catalog.nextBreakStartMessage(name: settings.userName)
-        updateBreakBubble(message: message, at: Date())
+        // Her cloud says its piece once and then holds still. The countdown
+        // itself goes across the middle of the dimmed screen: it is the one
+        // thing you are meant to be able to read without looking at the corner
+        // you were just asked to look away from.
+        companionModel.bubble = CompanionViewModel.Bubble(
+            message: catalog.nextBreakStartMessage(name: settings.userName),
+            primaryTitle: "Skip",
+            showsSnooze: false
+        )
+        showBreakCountdown(at: Date())
 
         breakTicker?.invalidate()
         let ticker = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -341,7 +582,7 @@ final class AppCoordinator {
                 if countdown.isFinished(at: now) {
                     self.finishBreak()
                 } else {
-                    self.updateBreakBubble(message: message, at: now)
+                    self.showBreakCountdown(at: now)
                 }
             }
         }
@@ -349,13 +590,13 @@ final class AppCoordinator {
         breakTicker = ticker
     }
 
-    private func updateBreakBubble(message: String, at now: Date) {
+    private func showBreakCountdown(at now: Date) {
         guard let countdown = breakCountdown else { return }
-        companionModel.bubble = CompanionViewModel.Bubble(
-            message: "\(message)\n\(countdown.secondsRemaining(at: now))s",
-            primaryTitle: "Skip",
-            showsSnooze: false
-        )
+        // Ticks four times a second so the countdown never visibly stutters;
+        // the text itself changes once a second and setting the same string
+        // again is a no-op on the label.
+        dimmer.setCountdown(countdown.clockText(at: now),
+                            caption: BreakCountdown.overlayCaption)
     }
 
     private func finishBreak() {
@@ -396,22 +637,148 @@ final class AppCoordinator {
         breakTicker?.invalidate()
         breakTicker = nil
         breakCountdown = nil
+        dimmer.setCountdown(nil, caption: nil)
         if dimmer.isDimmed { dimmer.undim(over: 0.5) }
     }
 
     /// Pops out to celebrate. Skipped while a reminder is being handled, so the
     /// celebration cannot interrupt the thing that earned it.
-    private func celebrate(_ message: String) {
+    private func celebrate(_ message: String, routine: ClipSequence = .waterLoggedRoutine) {
         guard engine.activeReminder == nil, !stateMachine.state.isWalking else {
             companionModel.bubble = CompanionViewModel.Bubble(message: message)
             return
         }
+        celebrationRoutine = routine
         pendingMessage = message
         stateMachine.handle(.summon(.celebration))
     }
 
+    /// Which clip the next celebration uses -- `happy` normally, `cheer` for a
+    /// streak milestone.
+    private var celebrationRoutine = ClipSequence.waterLoggedRoutine
+    /// A celebration with no words -- used after you log a glass of water.
+    private var silentCelebration = false
+    /// True while the current visit is a peek, so the exit matches the entrance.
+    private var wasPeeking = false
+    /// Set when the next exit should be brisk rather than a stroll.
+    private var hurriedExit = false
+
     func triggerReminder(_ kind: ReminderKind) {
         engine.triggerNow(kind)
+    }
+
+    // MARK: Focus sessions
+
+    var focusSession: FocusSession? { focus.session }
+
+    func startFocusSession() {
+        focus.start()
+        startFocusTicker()
+    }
+
+    func stopFocusSession() {
+        focus.stop()
+        focusTicker?.invalidate()
+        focusTicker = nil
+        engine.isFocusing = false
+        if stateMachine.state == .focusing { stateMachine.handle(.focusFinished) }
+    }
+
+    func skipFocusPhase() {
+        focus.skip()
+    }
+
+    private func startFocusTicker() {
+        focusTicker?.invalidate()
+        // Half-second so the countdown above her head does not visibly stutter.
+        let timer = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.focus.tick()
+                self.updateFocusBubble()
+            }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        focusTicker = timer
+    }
+
+    private func handleFocusPhase(_ session: FocusSession?) {
+        guard let session else {
+            engine.isFocusing = false
+            return
+        }
+        // Only *working* suppresses reminders; the break is when held reminders
+        // are meant to arrive.
+        engine.isFocusing = session.phase == .working
+
+        if session.phase == .working {
+            stateMachine.handle(.summon(.focus))
+        } else {
+            // Break: she gets up, cheers the session, and walks away. Anything
+            // held during the session comes through as soon as she has gone.
+            // Look up from the book, stand, cheer.
+            celebrationRoutine = .focusFinishedRoutine
+            pendingMessage = catalog.nextFocusDoneMessage(name: settings.userName)
+            stateMachine.handle(.summon(.celebration))
+        }
+    }
+
+    private func updateFocusBubble() {
+        guard stateMachine.state == .focusing, let session = focus.session else { return }
+        // The cloud itself is set once per phase and then left alone; only the
+        // clock changes on a tick. Rebuilding the bubble every second replayed
+        // its entrance animation each time, which is exactly as distracting as
+        // it sounds.
+        let bubble = CompanionViewModel.Bubble(
+            message: session.phase.displayName,
+            primaryTitle: "End",
+            showsSnooze: false
+        )
+        if companionModel.bubble != bubble { companionModel.bubble = bubble }
+        // The ticker runs twice a second but the clock only changes once, so
+        // half the ticks have nothing to publish.
+        let clock = session.clockText(at: Date())
+        if companionModel.countdown != clock { companionModel.countdown = clock }
+    }
+
+    #if AITWIN_DEV
+    /// Replaces the history with sample data. Debug builds only.
+    func loadSampleHistory() {
+        engine.replaceActivityLog(DeveloperFixtures.sampleActivityLog())
+    }
+
+    /// Empties the history, for checking the empty states.
+    func clearHistory() {
+        engine.replaceActivityLog(DeveloperFixtures.emptyActivityLog())
+    }
+    #endif
+
+    // MARK: Stats
+
+    var currentStreak: Int { engine.currentStreak() }
+    var bestStreak: Int { engine.bestStreak() }
+    var activityLog: ActivityLog { engine.activityLog }
+
+    /// The history as CSV, ready to save.
+    func exportCSV() -> String {
+        engine.activityLog.csv(intake: settings.water)
+    }
+
+    /// Plays one clip on demand. Backs the mood test buttons in Settings.
+    func previewClip(_ name: String) {
+        guard engine.activeReminder == nil else { return }
+        stateMachine.handle(.summon(.preview(name)))
+    }
+
+    /// Plays a whole routine on demand, so a behaviour can be checked end to end.
+    func previewSequence(_ name: String) {
+        guard engine.activeReminder == nil else { return }
+        stateMachine.handle(.summon(.previewSequence(name)))
+    }
+
+    /// Clips the current pack actually provides, for the test buttons.
+    var availableClipNames: [String] {
+        ClipName.loadable.filter { pack?.clips[$0] != nil }
     }
 
     func logWaterManually() {
@@ -439,6 +806,9 @@ final class AppCoordinator {
         settings = newSettings
         settingsStore.save(newSettings)
         engine.apply(newSettings)
+        focus.apply(newSettings)
+        chatter.frequency = newSettings.chatterFrequency
+        moods.thresholds = newSettings.moodThresholds
 
         if previous.startAtLogin != newSettings.startAtLogin {
             let succeeded = loginItem.setEnabled(newSettings.startAtLogin)
@@ -452,10 +822,12 @@ final class AppCoordinator {
         }
 
         companionModel.bubbleStyle = newSettings.bubbleStyle
+        companionModel.anchorsToTop = !newSettings.corner.isBottom
 
         if previous.characterHeight != newSettings.characterHeight {
             companionModel.characterHeight = newSettings.characterHeight
-            windowManager.setSize(CompanionLayout.panelSize(characterHeight: newSettings.characterHeight))
+            companionModel.frameHeight = frameHeight
+            windowManager.setSize(panelSize)
         }
 
         // A frame-rate or corner change should be visible immediately rather
@@ -471,6 +843,30 @@ final class AppCoordinator {
 
     func reloadPacks() {
         loadPack()
+    }
+
+    /// Installs a pack from a dropped zip or folder, normalising it on the way in.
+    /// - Returns: a sentence describing what happened, for the drop zone.
+    func installPack(from url: URL) -> String {
+        let installer = PackInstaller(destinationRoot: packLoader.userPacksDirectory)
+        packLoader.createUserPacksDirectoryIfNeeded()
+        do {
+            let result = try installer.install(from: url)
+            // Switch to it straight away: someone who just installed a character
+            // wants to see her, not hunt for a picker.
+            var updated = settings
+            updated.characterPackName = result.name
+            apply(updated)
+
+            var summary = "Installed “\(result.name)” — \(result.framesInstalled) frames, "
+                + "\(result.clipsInstalled.count) animations, \(result.canvas)."
+            if !result.clipsMissing.isEmpty {
+                summary += " No art for: \(result.clipsMissing.joined(separator: ", ")) — those fall back to idle."
+            }
+            return summary
+        } catch {
+            return "Could not install that: \(error.localizedDescription)"
+        }
     }
 
     func availablePackNames() -> [String] {
@@ -496,6 +892,10 @@ final class AppCoordinator {
             frameDuration: configuration.animationFrameDuration
         )
         if let pack { imageCache.preload(pack) }
+        // The pack decides how much headroom a frame carries, so its size feeds
+        // straight back into the panel.
+        companionModel.frameHeight = frameHeight
+        windowManager.setSize(panelSize)
         // Sample her colours so the thought cloud and buttons match the art.
         companionModel.palette = CharacterPaletteExtractor.palette(for: pack, cache: imageCache)
         applyClip(named: stateMachine.state.clipName)
@@ -503,15 +903,17 @@ final class AppCoordinator {
 
     private func applyClip(named name: String) {
         guard let pack,
-              let clip = pack.resolveClip(named: name, wearingGlasses: settings.wearsGlasses)
+              let clip = pack.resolveClip(named: name)
         else {
             // No art at all: the view falls back to its vector placeholder.
             companionModel.image = nil
             companionModel.facing = facing
+            companionModel.headHeight = frameHeight
             return
         }
         sequencer.setClip(clip)
         companionModel.facing = facing
+        companionModel.headHeight = clip.headHeight(inFrameOf: frameHeight)
         updateImage()
     }
 
@@ -530,7 +932,14 @@ final class AppCoordinator {
         let timer = Timer(timeInterval: configuration.tickInterval, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                self.engine.tick(idleSeconds: self.idleMonitor.idleSeconds)
+                let idle = self.idleMonitor.idleSeconds
+                self.engine.tick(idleSeconds: idle)
+                self.updateMoodMonitor(idleSeconds: idle)
+                // A mood is the more meaningful interruption, so it gets first
+                // refusal; chatter only fills the silence it leaves.
+                if !self.maybeShowMood(idleSeconds: idle) {
+                    self.maybeChatter(idleSeconds: idle)
+                }
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -546,11 +955,31 @@ final class AppCoordinator {
             MainActor.assumeIsolated {
                 guard let self else { return }
                 self.sequencer.advance(by: step)
+                self.advanceSequence()
                 self.updateImage()
             }
         }
         RunLoop.main.add(timer, forMode: .common)
         animationTimer = timer
+    }
+
+    /// Moves a running routine to its next beat when the current one is over.
+    private func advanceSequence() {
+        guard sequencePlayer.sequence != nil, !sequencePlayer.isFinished else { return }
+        if sequencePlayer.tick(at: Date(), clipFinished: sequencer.isFinished),
+           let clip = sequencePlayer.currentClip {
+            applyClip(named: clip)
+        }
+    }
+
+    /// Starts a routine and shows its first beat.
+    private func play(_ sequence: ClipSequence) {
+        sequencePlayer.start(sequence, at: Date())
+        if let clip = sequencePlayer.currentClip { applyClip(named: clip) }
+    }
+
+    private func stopSequence() {
+        sequencePlayer.stop()
     }
 
     private func stopAnimation() {
@@ -563,10 +992,78 @@ final class AppCoordinator {
         stateMachine.state.isVisible ? startAnimation() : stopAnimation()
     }
 
+    /// Whether the clock is inside the user's configured night window.
+    private func isNight(at now: Date = Date()) -> Bool {
+        let parts = Calendar.current.dateComponents([.hour, .minute], from: now)
+        let minuteOfDay = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+        let start = settings.moodThresholds.nightStartMinutes
+        return minuteOfDay >= start || minuteOfDay < 5 * 60
+    }
+
+    // MARK: Moods
+
+    /// Keeps the monitor's picture of the day current.
+    private func updateMoodMonitor(idleSeconds: TimeInterval) {
+        if idleSeconds >= MoodMonitor.maximumIdleSeconds {
+            moods.noteAway()
+        } else {
+            moods.noteActive(at: Date())
+        }
+    }
+
+    /// Shows concern or sleepiness when the day warrants it.
+    /// - Returns: whether a mood was shown, so chatter can stand down.
+    @discardableResult
+    private func maybeShowMood(idleSeconds: TimeInterval) -> Bool {
+        let now = Date()
+        let conditions = MoodMonitor.Conditions(
+            isPaused: settings.remindersPaused,
+            inQuietHours: settings.quietHours.contains(now),
+            isFocusing: focus.isActive,
+            characterIsBusy: stateMachine.state != .hidden || engine.activeReminder != nil,
+            idleSeconds: idleSeconds
+        )
+        guard settings.moodsEnabled,
+              let mood = moods.mood(at: now, conditions: conditions) else { return false }
+        moods.noteMoodShown(mood, at: now)
+        pendingMessage = mood == .concerned
+            ? catalog.nextConcernedMessage(name: settings.userName)
+            : catalog.nextSleepyMessage(name: settings.userName)
+        stateMachine.handle(.summon(.mood(mood)))
+        return true
+    }
+
+    // MARK: Idle chatter
+
+    /// Offers an unprompted line, subject to every limit in `ChatterScheduler`.
+    private func maybeChatter(idleSeconds: TimeInterval) {
+        let now = Date()
+        let conditions = ChatterScheduler.Conditions(
+            isPaused: settings.remindersPaused,
+            inQuietHours: settings.quietHours.contains(now),
+            isFocusing: focus.isActive,
+            characterIsBusy: stateMachine.state != .hidden || engine.activeReminder != nil,
+            idleSeconds: idleSeconds
+        )
+        guard chatter.shouldChatter(at: now, conditions: conditions) else { return }
+        chatter.noteChatter(at: now)
+        pendingMessage = catalog.nextChatterMessage(name: settings.userName)
+        stateMachine.handle(.summon(.chatter))
+    }
+
     // MARK: Screen geometry
 
+    /// Rendered frame height for the current pack, so the character measures
+    /// `settings.characterHeight` regardless of how much headroom the art needs.
+    private var frameHeight: Double {
+        pack?.frameHeight(forCharacterHeight: settings.characterHeight) ?? settings.characterHeight
+    }
+
     private var panelSize: GSize {
-        CompanionLayout.panelSize(characterHeight: settings.characterHeight)
+        CompanionLayout.panelSize(
+            characterHeight: settings.characterHeight,
+            frameHeight: frameHeight
+        )
     }
 
     private var visibleFrame: GRect {
@@ -582,6 +1079,17 @@ final class AppCoordinator {
             size: panelSize,
             visibleFrame: visibleFrame,
             margin: configuration.edgeMargin
+        )
+    }
+
+    private var screenFrame: GRect {
+        screenProvider.activeScreen?.frame ?? visibleFrame
+    }
+
+    private func peekOrigin() -> GPoint {
+        CharacterPlacement.peekOrigin(
+            corner: settings.corner, size: panelSize,
+            visibleFrame: visibleFrame, screenFrame: screenFrame
         )
     }
 

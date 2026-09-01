@@ -1,4 +1,5 @@
 import AppKit
+import UniformTypeIdentifiers
 import AiTwinCore
 import AiTwinUI
 
@@ -69,6 +70,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsModel.onTestReminder = { [weak self] kind in
             self?.coordinator.triggerReminder(kind)
         }
+        settingsModel.onPreviewClip = { [weak self] clip in
+            self?.coordinator.previewClip(clip)
+        }
+        settingsModel.onStartFocus = { [weak self] in
+            self?.coordinator.startFocusSession()
+        }
+        settingsModel.onExportHistory = { [weak self] in
+            self?.exportHistory()
+        }
+        settingsModel.onImportPack = { [weak self] url in
+            guard let self else { return }
+            self.settingsModel.importStatus = "Installing…"
+            // Kept on the main thread: the installer draws through
+            // NSGraphicsContext, which is not safe to use off it. Measuring a
+            // pack takes a moment, so the status line above says what is
+            // happening rather than leaving the window looking stuck.
+            DispatchQueue.main.async {
+                let summary = self.coordinator.installPack(from: url)
+                self.settingsModel.importStatus = summary
+                self.refreshSettingsModel()
+            }
+        }
+        settingsModel.onBrowseForPack = { [weak self] in
+            self?.browseForPack()
+        }
+        #if AITWIN_DEV
+        settingsModel.onPreviewSequence = { [weak self] name in
+            self?.coordinator.previewSequence(name)
+        }
+        settingsModel.onLoadSampleData = { [weak self] in
+            self?.coordinator.loadSampleHistory()
+            self?.refreshSettingsModel()
+        }
+        settingsModel.onClearHistory = { [weak self] in
+            self?.coordinator.clearHistory()
+            self?.refreshSettingsModel()
+        }
+        #endif
 
         // App -> settings window, so the menu bar's Pause item and the window's
         // toggle can never disagree.
@@ -89,9 +128,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Picks a character pack to install, for anyone who would rather not drag.
+    private func browseForPack() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose a Character"
+        panel.message = "Pick a character .zip or a folder of animation folders."
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.zip, .folder]
+
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        settingsModel.onImportPack?(url)
+    }
+
+    /// Saves the recorded history wherever the user chooses.
+    ///
+    /// A save panel rather than a fixed location: this is the user's data, and
+    /// they should decide where it lands.
+    private func exportHistory() {
+        let panel = NSSavePanel()
+        panel.nameFieldStringValue = ActivityLog.exportFilename()
+        panel.allowedContentTypes = [.commaSeparatedText]
+        panel.title = "Export AiTwin History"
+        panel.message = "Saved as CSV — opens in Numbers, Excel or any spreadsheet."
+
+        // The app is an accessory, so it is never frontmost; without activating,
+        // the panel would open behind whatever the user is looking at.
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try coordinator.exportCSV().write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not save the history"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+    }
+
     private func refreshSettingsModel() {
         settingsModel.availablePacks = coordinator.availablePackNames()
         settingsModel.missingClips = coordinator.missingClipNames
         settingsModel.palette = coordinator.companionModel.palette
+        settingsModel.availableClips = coordinator.availableClipNames
+        settingsModel.activityLog = coordinator.activityLog
+        settingsModel.currentStreak = coordinator.currentStreak
+        settingsModel.bestStreak = coordinator.bestStreak
     }
 }

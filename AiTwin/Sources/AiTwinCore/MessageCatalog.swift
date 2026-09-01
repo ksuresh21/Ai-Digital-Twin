@@ -53,6 +53,19 @@ public final class MessageCatalog {
         "Eyes need a stretch 👁️",
     ]
 
+    public static let stretchMessages = [
+        "Stand up{name} 🙆",
+        "Roll those shoulders ✨",
+        "{first}, stretch time!",
+        "Up you get{name} 💪",
+        "Your back says hi 🙃",
+        "Reach for the ceiling{name} ✨",
+        "{first} — unfold yourself 🙆",
+        "Quick stretch{name}?",
+        "Shoulders. Neck. Go 💪",
+        "{first}, been still a while ✨",
+    ]
+
     /// Shown while the eye-break countdown runs.
     public static let breakStartMessages = [
         "Look away{name} 👀",
@@ -79,6 +92,78 @@ public final class MessageCatalog {
         "{first} — proud of you ✨",
         "That's the good stuff 😌",
         "See? Easy 💙",
+    ]
+
+    /// Unprompted lines. Kept gentle and low-stakes — these arrive when nothing
+    /// is wrong, so anything urgent-sounding would be a lie.
+    public static let chatterMessages = [
+        "Still here 💙",
+        "Doing okay{name}?",
+        "{first} 👋",
+        "Nice work so far ✨",
+        "Just checking in{name}",
+        "You've got this{first}",
+        "Ooh, busy day{name}?",
+        "I'm here if you need me 💙",
+        "{first}, breathe ✨",
+        "Looking good{name} 🌤️",
+    ]
+
+    /// Shown when she has been ignored, or you have worked a long stretch.
+    /// Caring, never scolding — guilt gets an app uninstalled.
+    public static let concernedMessages = [
+        "You okay{name}?",
+        "That's a long stretch ✨",
+        "{first}, take a minute?",
+        "Still going{name}? 💙",
+        "I'm a bit worried 💙",
+        "{first} — a small break?",
+        "You've earned a pause{name}",
+        "No rush, just checking 💙",
+        "{first}, look after yourself ✨",
+        "Long one today{name}?",
+    ]
+
+    /// Shown late at night, or after a very long session.
+    public static let sleepyMessages = [
+        "It's getting late{name} 😴",
+        "{first}… bedtime? 🌙",
+        "I'm getting sleepy 😴",
+        "Rest soon{name} 🌙",
+        "Long day{name}. Sleep? 😴",
+        "{first}, call it a night 🌙",
+        "My eyes are heavy 😴",
+        "Tomorrow's fine too{name} 🌙",
+        "{first} — go rest 😴",
+        "Sleepy hours{name} 🌙",
+    ]
+
+    /// Shown when a focus session finishes.
+    public static let focusDoneMessages = [
+        "Session done 🎯",
+        "Nice focus{name}!",
+        "{first}, that was solid 💪",
+        "Time for a break ✨",
+        "Well focused{name} 🎯",
+        "{first} — take five 🌤️",
+        "That's one done ✨",
+        "Good work{name} ✨",
+        "{first}, break time 💙",
+        "Focus complete 🎯",
+    ]
+
+    /// Shown when a streak milestone is reached.
+    public static let streakMessages = [
+        "{days} days running 🔥",
+        "{days}-day streak{name}! 🔥",
+        "{first}, {days} days straight 🔥",
+        "{days} in a row ✨",
+        "Streak: {days} 🔥",
+        "{days} days{name} 💪",
+        "{first}! {days} days 🏆",
+        "{days} days of self-care ✨",
+        "Still going: {days} days 🔥",
+        "{days} days{name} 🏆",
     ]
 
     public static let goalMessages = [
@@ -190,6 +275,7 @@ public final class MessageCatalog {
         switch kind {
         case .water:    return waterMessages
         case .eyeBreak: return eyeBreakMessages
+        case .stretch:  return stretchMessages
         }
     }
 
@@ -199,11 +285,12 @@ public final class MessageCatalog {
     ///
     /// Only the first word of the name is used, so entering a full name still
     /// produces "Hey Suresh" rather than "Hey Suresh Kumar".
-    public static func fill(_ template: String, name rawName: String) -> String {
+    public static func fill(_ template: String, name rawName: String, days: Int = 0) -> String {
         let first = firstName(rawName)
         return template
             .replacingOccurrences(of: "{name}", with: first.isEmpty ? "" : ", \(first)")
             .replacingOccurrences(of: "{first}", with: first)
+            .replacingOccurrences(of: "{days}", with: "\(days)")
     }
 
     public static func firstName(_ rawName: String) -> String {
@@ -222,7 +309,7 @@ public final class MessageCatalog {
     // MARK: - Drawing lines
 
     /// Picks from `templates` without repeating until they have all been used.
-    private func pick(_ templates: [String], key: String, name: String) -> String {
+    private func pick(_ templates: [String], key: String, name: String, days: Int = 0) -> String {
         let hasName = !Self.firstName(name).isEmpty
         let usable = Self.usable(templates, hasName: hasName)
         guard !usable.isEmpty else { return "Hi 👋" }
@@ -232,7 +319,7 @@ public final class MessageCatalog {
         let index = min(Int(randomSource() * Double(remaining.count)), remaining.count - 1)
         let chosen = remaining.remove(at: index)
         unusedByKey[key] = remaining
-        return Self.fill(chosen, name: name)
+        return Self.fill(chosen, name: name, days: days)
     }
 
     public func nextMessage(for kind: ReminderKind, name: String = "") -> String {
@@ -260,6 +347,32 @@ public final class MessageCatalog {
         pick(Self.goalMessages, key: "goal", name: name)
     }
 
+    public func nextConcernedMessage(name: String = "") -> String {
+        pick(Self.concernedMessages, key: "concerned", name: name)
+    }
+
+    public func nextSleepyMessage(name: String = "") -> String {
+        pick(Self.sleepyMessages, key: "sleepy", name: name)
+    }
+
+    public func nextChatterMessage(name: String = "") -> String {
+        pick(Self.chatterMessages, key: "chatter", name: name)
+    }
+
+    public func nextFocusDoneMessage(name: String = "") -> String {
+        pick(Self.focusDoneMessages, key: "focus.done", name: name)
+    }
+
+    /// Streak lines carry the day count as well as the name.
+    /// Streak lines carry the day count as well as the name.
+    ///
+    /// The count has to go through `pick`, not be applied afterwards: `pick`
+    /// already expands the template, so a second pass had nothing left to
+    /// replace and every streak read "0 days".
+    public func nextStreakMessage(days: Int, name: String = "") -> String {
+        pick(Self.streakMessages, key: "streak", name: name, days: days)
+    }
+
     /// Simple time-of-day greeting with no variety, for labels.
     public static func greeting(for date: Date, calendar: Calendar = .current) -> String {
         fill(TimeOfDay.at(date, calendar: calendar).messages[0], name: "")
@@ -273,8 +386,12 @@ public final class MessageCatalog {
     public static var allPools: [(key: String, templates: [String])] {
         [
             ("water", waterMessages), ("eyeBreak", eyeBreakMessages),
+            ("stretch", stretchMessages),
             ("breakStart", breakStartMessages), ("breakDone", breakDoneMessages),
             ("goal", goalMessages), ("wake", wakeMessages),
+            ("chatter", chatterMessages), ("focusDone", focusDoneMessages),
+            ("concerned", concernedMessages), ("sleepy", sleepyMessages),
+            ("streak", streakMessages),
             ("morning", morningMessages), ("afternoon", afternoonMessages),
             ("evening", eveningMessages), ("lateNight", lateNightMessages),
         ]

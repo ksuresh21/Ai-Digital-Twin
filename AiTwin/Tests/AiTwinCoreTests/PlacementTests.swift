@@ -239,14 +239,44 @@ struct WaterLogTests {
     func progressClamped() {
         var log = WaterLog.empty(at: noon, calendar: calendar)
         log.add(20, at: noon, calendar: calendar)
-        #expect(log.progress(goal: 8) == 1.0)
+        #expect(log.progress(WaterIntake(glassSize: 250, dailyGoal: 2000)) == 1.0)
     }
 
-    @Test("a zero goal does not divide by zero")
-    func zeroGoal() {
-        let log = WaterLog.empty(at: noon, calendar: calendar)
-        #expect(log.progress(goal: 0) == 0)
-        #expect(log.hasReachedGoal(0) == false)
+    @Test("water is counted in millilitres, not glasses")
+    func countedInMillilitres() {
+        // A glass is not a unit -- yours may be 200ml and mine 350ml -- so the
+        // goal is a volume and the glass size is what converts it.
+        let intake = WaterIntake(glassSize: 250, dailyGoal: 3000)
+        #expect(intake.glassesForGoal == 12)
+        #expect(intake.millilitres(forGlasses: 4) == 1000)
+        #expect(intake.hasReachedGoal(glasses: 11) == false)
+        #expect(intake.hasReachedGoal(glasses: 12))
+    }
+
+    @Test("a bigger glass means fewer of them")
+    func biggerGlassFewerGlasses() {
+        #expect(WaterIntake(glassSize: 200, dailyGoal: 3000).glassesForGoal == 15)
+        #expect(WaterIntake(glassSize: 500, dailyGoal: 3000).glassesForGoal == 6)
+    }
+
+    @Test("a partial glass still counts as one more needed")
+    func roundsUp() {
+        // You cannot drink four fifths of a glass and call the day done.
+        #expect(WaterIntake(glassSize: 250, dailyGoal: 2600).glassesForGoal == 11)
+    }
+
+    @Test("volumes read as litres once that is clearer")
+    func formatting() {
+        #expect(WaterIntake.format(millilitres: 750) == "750 ml")
+        #expect(WaterIntake.format(millilitres: 3000) == "3 L")
+        #expect(WaterIntake.format(millilitres: 2500) == "2.5 L")
+    }
+
+    @Test("absurd values are clamped rather than breaking the maths")
+    func clamped() {
+        #expect(WaterIntake(glassSize: 0, dailyGoal: 0).glassSize >= 50)
+        #expect(WaterIntake(glassSize: 99999, dailyGoal: 99999).dailyGoal <= 10000)
+        #expect(WaterIntake(glassSize: 250, dailyGoal: 250).progress(glasses: 0) == 0)
     }
 }
 
@@ -281,6 +311,137 @@ struct CompanionLayoutTests {
             )
             #expect(origin.y + size.height <= visible.maxY)
             #expect(origin.x + size.width <= visible.maxX)
+        }
+    }
+}
+
+@Suite("Top-corner anchoring")
+struct TopCornerTests {
+
+    private let visible = GRect(x: 0, y: 70, width: 1440, height: 805)
+
+    @Test("a top corner puts the character's edge against the screen edge")
+    func topCornerIsFlush() {
+        // The panel reserves space for the cloud. At a top corner that reserve
+        // has to be *below* her, or it sits between her and the screen edge and
+        // she hangs the height of the reserve too low.
+        let frameHeight = 316.0
+        let size = CompanionLayout.panelSize(characterHeight: 200, frameHeight: frameHeight)
+        let origin = CharacterPlacement.restingOrigin(
+            corner: .topLeft, size: size, visibleFrame: visible, margin: 24
+        )
+        // The panel's top edge is one margin below the top of the usable area…
+        #expect(abs((origin.y + size.height) - (visible.maxY - 24)) < 0.5)
+        // …and the character occupies that top portion, so her head is near it.
+        let headroom = size.height - frameHeight
+        #expect(headroom == CompanionLayout.bubbleReservedHeight)
+    }
+
+    @Test("bottom corners are unchanged")
+    func bottomCornerUnchanged() {
+        let size = CompanionLayout.panelSize(characterHeight: 200, frameHeight: 316)
+        let origin = CharacterPlacement.restingOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible, margin: 24
+        )
+        #expect(origin.y == visible.minY + 24)
+    }
+
+    @Test("only the bottom corners anchor the character downward")
+    func anchorDirection() {
+        #expect(ScreenCorner.bottomLeft.isBottom)
+        #expect(ScreenCorner.bottomRight.isBottom)
+        #expect(ScreenCorner.topLeft.isBottom == false)
+        #expect(ScreenCorner.topRight.isBottom == false)
+    }
+
+    @Test("a top-corner panel still fits entirely on screen")
+    func topPanelFits() {
+        let size = CompanionLayout.panelSize(characterHeight: 256, frameHeight: 405)
+        for corner in [ScreenCorner.topLeft, .topRight] {
+            let origin = CharacterPlacement.restingOrigin(
+                corner: corner, size: size, visibleFrame: visible, margin: 24
+            )
+            #expect(origin.y >= visible.minY)
+            #expect(origin.y + size.height <= visible.maxY)
+        }
+    }
+}
+
+/// Where the character actually lands at a *top* corner.
+///
+/// The earlier top-corner test only checked the panel's placement, which was
+/// always right -- and the bug lived entirely in where she sat inside it. These
+/// measure her topmost visible pixel instead.
+@Suite("Top-corner anchoring")
+struct TopCornerAnchoringTests {
+
+    private let visible = GRect(x: 0, y: 70, width: 1440, height: 805)
+    private let margin = 24.0
+
+    /// Screen-space y of her topmost visible pixel at a top corner.
+    ///
+    /// Anchored to the panel's top edge, a frame's content begins
+    /// `frameHeight - headHeight` further down, because the artwork is aligned
+    /// to the frame's baseline and the space above it is transparent headroom
+    /// for jumps. The lift is subtracted from exactly that.
+    private func headTop(frameHeight: Double, headHeight: Double, lifted: Bool = true) -> Double {
+        let size = CompanionLayout.panelSize(characterHeight: 200, frameHeight: frameHeight)
+        let origin = CharacterPlacement.restingOrigin(
+            corner: .topLeft, size: size, visibleFrame: visible, margin: margin
+        )
+        let panelTop = origin.y + size.height
+        let lift = lifted
+            ? CompanionLayout.topAnchoredLift(frameHeight: frameHeight, headHeight: headHeight)
+            : 0
+        return panelTop - ((frameHeight - headHeight) - lift)
+    }
+
+    @Test("her head sits one margin below the top of the usable screen")
+    func headIsFlushWithTheCorner() {
+        let top = headTop(frameHeight: 316, headHeight: 232)
+        #expect(abs(top - (visible.maxY - margin)) < 0.5)
+    }
+
+    @Test("the pose no longer changes how low she hangs")
+    func noDriftBetweenPoses() {
+        // An idle, a reach and a full jump use different amounts of the frame.
+        let tops = [232.0, 280.0, 316.0].map { headTop(frameHeight: 316, headHeight: $0) }
+        #expect(Set(tops).count == 1)
+    }
+
+    @Test("unlifted, she hung lower the shorter the pose -- the original bug")
+    func withoutTheLiftSheDrifts() {
+        let idle = headTop(frameHeight: 316, headHeight: 232, lifted: false)
+        let jump = headTop(frameHeight: 316, headHeight: 316, lifted: false)
+        #expect(jump - idle == 84)
+        #expect(idle < visible.maxY - margin)
+    }
+
+    @Test("the lift is exactly the frame's unused headroom")
+    func liftEqualsUnusedHeadroom() {
+        #expect(CompanionLayout.topAnchoredLift(frameHeight: 316, headHeight: 232) == 84)
+        #expect(CompanionLayout.topAnchoredLift(frameHeight: 316, headHeight: 316) == 0)
+    }
+
+    @Test("a pose taller than its own frame is never pushed off the top")
+    func liftNeverNegative() {
+        #expect(CompanionLayout.topAnchoredLift(frameHeight: 200, headHeight: 260) == 0)
+    }
+
+    @Test("the cloud keeps the same distance from her whichever way up she is")
+    func cloudDistanceIsSymmetric() {
+        #expect(CompanionLayout.cloudDistance(headHeight: 232) == 232 + CompanionLayout.cloudGap)
+        #expect(CompanionLayout.cloudGap > 0)
+    }
+
+    @Test("the cloud still fits in the reserve once she is lifted")
+    func cloudFitsBelowHer() {
+        // Lifted, her feet are `headHeight` below the panel top and the cloud
+        // goes just under them -- it has to land inside the panel, not past it.
+        let frameHeight = 316.0
+        let size = CompanionLayout.panelSize(characterHeight: 200, frameHeight: frameHeight)
+        for headHeight in [232.0, 280.0, frameHeight] {
+            #expect(CompanionLayout.cloudDistance(headHeight: headHeight) < size.height)
         }
     }
 }

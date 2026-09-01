@@ -10,6 +10,9 @@ import AiTwinCore
 /// a piece of system UI parked on the desktop.
 public struct SpeechBubbleView: View {
     let message: String
+    /// A ticking clock, drawn under the message. Separate from `message` so a
+    /// tick does not change the cloud's identity -- see `CompanionViewModel`.
+    let countdown: String?
     let primaryTitle: String?
     let onPrimary: (() -> Void)?
     let onSnooze: (() -> Void)?
@@ -19,6 +22,7 @@ public struct SpeechBubbleView: View {
 
     public init(
         message: String,
+        countdown: String? = nil,
         primaryTitle: String? = nil,
         onPrimary: (() -> Void)? = nil,
         onSnooze: (() -> Void)? = nil,
@@ -27,6 +31,7 @@ public struct SpeechBubbleView: View {
         style: BubbleStyle = .cloud
     ) {
         self.message = message
+        self.countdown = countdown
         self.primaryTitle = primaryTitle
         self.onPrimary = onPrimary
         self.onSnooze = onSnooze
@@ -42,6 +47,13 @@ public struct SpeechBubbleView: View {
 
         VStack(spacing: 6) {
             messageText
+            if let countdown {
+                // Monospaced digits: proportional ones change width as the
+                // numbers change, so a centred clock jitters every second.
+                Text(countdown)
+                    .font(.system(size: 20, weight: .semibold, design: .rounded).monospacedDigit())
+                    .foregroundStyle(style.isFramed ? Color(palette.ink) : .primary)
+            }
             if hasButtons {
                 HStack(spacing: 5) {
                     if let onPrimary, let primaryTitle {

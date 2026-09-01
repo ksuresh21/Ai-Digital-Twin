@@ -19,6 +19,17 @@ public enum EngineHoldReason: String, Equatable, Sendable {
     case paused
     case quietHours
     case userIdle
+    /// A focus session is running. Reminders are held, not dropped.
+    case focusing
+
+    public var displayName: String {
+        switch self {
+        case .paused:     return "Paused"
+        case .quietHours: return "Quiet hours — staying quiet"
+        case .userIdle:   return "You're away — timers on hold"
+        case .focusing:   return "Focusing — reminders held"
+        }
+    }
 }
 
 /// Owns the reminder timers and decides when the character should appear.
@@ -35,6 +46,10 @@ public final class ReminderEngine {
     /// The reminder currently on screen, if any.
     public private(set) var activeReminder: ReminderKind?
     public private(set) var holdReason: EngineHoldReason?
+    /// Set by the app while a focus session is working. Suppresses everything.
+    public var isFocusing: Bool = false
+    /// Written to on every acknowledged, snoozed or ignored reminder.
+    public private(set) var activityLog: ActivityLog
 
     public var onEvent: ((ReminderEvent) -> Void)?
 
@@ -42,6 +57,7 @@ public final class ReminderEngine {
     private let calendar: Calendar
     private let catalog: MessageCatalog
     private let waterLogStore: WaterLogStoring?
+    private let activityLogStore: ActivityLogStoring?
     private var timers: [ReminderKind: ReminderTimer] = [:]
     private var activeSince: Date?
     private var isStarted = false
@@ -52,7 +68,8 @@ public final class ReminderEngine {
         clock: Clock,
         catalog: MessageCatalog = MessageCatalog(),
         calendar: Calendar = .current,
-        waterLogStore: WaterLogStoring? = nil
+        waterLogStore: WaterLogStoring? = nil,
+        activityLogStore: ActivityLogStoring? = nil
     ) {
         self.settings = settings
         self.configuration = configuration
@@ -60,6 +77,8 @@ public final class ReminderEngine {
         self.catalog = catalog
         self.calendar = calendar
         self.waterLogStore = waterLogStore
+        self.activityLogStore = activityLogStore
+        self.activityLog = activityLogStore?.load() ?? ActivityLog()
         self.waterLog = waterLogStore?.load() ?? WaterLog.empty(at: clock.now, calendar: calendar)
 
         for kind in ReminderKind.allCases {
@@ -119,7 +138,7 @@ public final class ReminderEngine {
 
         // Fixed order rather than "whichever fired first" so behaviour is
         // deterministic when both come due in the same tick.
-        for kind in [ReminderKind.water, .eyeBreak] {
+        for kind in [ReminderKind.water, .eyeBreak, .stretch] {
             guard settings.isEnabled(kind), let timer = timers[kind], timer.hasFired(at: now) else { continue }
             present(kind, at: now)
             return
@@ -131,6 +150,10 @@ public final class ReminderEngine {
         let reason: EngineHoldReason?
         if settings.remindersPaused {
             reason = .paused
+        } else if isFocusing {
+            // Held, not cancelled: the deadline is preserved, so a reminder due
+            // mid-session arrives as soon as the break begins.
+            reason = .focusing
         } else if settings.quietHours.contains(now, calendar: calendar) {
             reason = .quietHours
         } else if settings.pauseWhenIdle && idleSeconds >= settings.idleThreshold {
@@ -175,6 +198,7 @@ public final class ReminderEngine {
         if kind == .water {
             logWater(at: now)
         }
+        record(.reminderAccepted(kind), at: now)
         restartCycle(for: kind, at: now)
         onEvent?(.reminderAcknowledged(kind))
     }
@@ -186,6 +210,7 @@ public final class ReminderEngine {
         activeReminder = nil
         activeSince = nil
         timers[kind]?.snooze(by: settings.snoozeInterval, at: now)
+        record(.reminderSnoozed(kind), at: now)
         let until = now.addingTimeInterval(settings.snoozeInterval)
         onEvent?(.reminderSnoozed(kind, until: until))
     }
@@ -194,6 +219,7 @@ public final class ReminderEngine {
         activeReminder = nil
         activeSince = nil
         timers[kind]?.snooze(by: settings.snoozeInterval, at: now)
+        record(.reminderIgnored(kind), at: now)
         onEvent?(.reminderTimedOut(kind))
     }
 
@@ -217,15 +243,56 @@ public final class ReminderEngine {
     }
 
     private func logWater(at now: Date) {
-        let wasAtGoal = waterLog.hasReachedGoal(settings.dailyWaterGoal)
+        let wasAtGoal = waterLog.hasReachedGoal(settings.water)
         waterLog.add(1, at: now, calendar: calendar)
         waterLogStore?.save(waterLog)
-        let reachedNow = waterLog.hasReachedGoal(settings.dailyWaterGoal)
+        record(.glassLogged(goal: settings.water.glassesForGoal), at: now)
+        let reachedNow = waterLog.hasReachedGoal(settings.water)
         onEvent?(.waterLogged(
             glasses: waterLog.glasses,
-            goal: settings.dailyWaterGoal,
+            goal: settings.water.glassesForGoal,
             goalJustReached: reachedNow && !wasAtGoal
         ))
+    }
+
+    // MARK: Activity history
+
+    /// Writes an event into today's record and persists it.
+    private func record(_ event: ActivityEvent, at now: Date) {
+        activityLog.apply(event, at: now, calendar: calendar)
+        activityLogStore?.save(activityLog)
+    }
+
+    /// Records a completed focus session. Called by the app, not the engine.
+    public func recordFocusSession(minutes: Double) {
+        record(.focusSessionCompleted(minutes: minutes), at: clock.now)
+    }
+
+    #if AITWIN_DEV
+    /// Replaces the whole history. Used only by the developer tools.
+    public func replaceActivityLog(_ log: ActivityLog) {
+        activityLog = log
+        activityLogStore?.save(log)
+    }
+    #endif
+
+    /// Folds history from another machine into this one.
+    public func mergeActivityLog(_ other: ActivityLog) {
+        activityLog = activityLog.merged(with: other)
+        activityLogStore?.save(activityLog)
+    }
+
+    public func currentStreak() -> Int {
+        activityLog.currentStreak(endingAt: clock.now, calendar: calendar)
+    }
+
+    public func bestStreak() -> Int {
+        activityLog.bestStreak(calendar: calendar)
+    }
+
+    /// The streak milestone reached by today's goal, if any.
+    public func streakMilestoneReachedToday() -> Int? {
+        ActivityLog.milestone(for: currentStreak())
     }
 
     // MARK: Settings

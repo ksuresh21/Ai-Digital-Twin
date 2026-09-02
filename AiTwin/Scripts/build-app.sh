@@ -52,8 +52,14 @@ cp "$BINARY" "$CONTENTS/MacOS/$APP_NAME"
 
 # Character packs ship inside the bundle. User packs live in
 # ~/Library/Application Support/AiTwin/Characters and take priority.
+#
+# Dotfiles are excluded, and that is not cosmetic: `.superseded/` holds frames
+# moved aside during development rather than deleted, and a plain `cp -R` was
+# copying them in. 24 MB of a 35 MB app -- and of the .dmg -- was dead art that
+# the loader never reads, because it scans with .skipsHiddenFiles.
 if [[ -d "$ROOT/Resources/Characters" ]]; then
-  cp -R "$ROOT/Resources/Characters" "$CONTENTS/Resources/Characters"
+  mkdir -p "$CONTENTS/Resources/Characters"
+  rsync -a --exclude='.*' "$ROOT/Resources/Characters/" "$CONTENTS/Resources/Characters/"
 fi
 
 # Menu bar template image (the Ai_Twin mark).

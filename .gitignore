@@ -1,0 +1,54 @@
+# ── Build output ───────────────────────────────────────────────────────────────
+.build/
+build/
+.swiftpm/
+Package.resolved
+*.dmg
+DerivedData/
+
+# ── macOS / editor noise ──────────────────────────────────────────────────────
+.DS_Store
+*.xcuserstate
+xcuserdata/
+.idea/
+.vscode/
+
+# ── Secrets. Never commit these. ──────────────────────────────────────────────
+.env
+.env.*
+*.pem
+*.p12
+
+# ── Internal planning, not for the public repo ────────────────────────────────
+# The original brief. It is a working document full of half-decisions and
+# rejected approaches, and reading it gives a misleading picture of the app.
+Project— AI Digital GF:BF Companion for macOS.md
+
+# The Colab prototype the character generator grew out of. Superseded by
+# CharacterGenerator/ and kept only for reference.
+aitwin_1_1.py
+
+# ── Superseded assets ─────────────────────────────────────────────────────────
+# Files moved aside during development rather than deleted. Useful locally as a
+# safety net, meaningless to anyone else, and 178 of them were sitting inside
+# the Nish pack in the public repo.
+.superseded/
+
+# ── Character generator working data ──────────────────────────────────────────
+CharacterGenerator/.cache/
+CharacterGenerator/.work/
+CharacterGenerator/report.json
+CharacterGenerator/*.zip
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# ── Large media ───────────────────────────────────────────────────────────────
+# Screen recordings belong on a GitHub Release, not in git history. A 12 MB
+# .mov is permanent weight in every clone, for ever.
+*.mov
+*.mp4

@@ -1,0 +1,8 @@
+.cache/
+.work/
+.env
+__pycache__/
+.pytest_cache/
+*.pyc
+report.json
+*.zip

@@ -85,10 +85,11 @@ platform layer supplies `NSScreen.visibleFrame` and applies the answer.
 | `QuietHours.swift` | A daily window, including the crossing-midnight case |
 | `WaterLog.swift` | Daily counter with midnight rollover |
 | `MessageCatalog.swift` | Greetings and non-repeating reminder pools |
+| `PresenceTracker.swift` | Whether a spell away from the Mac was long enough to reset for |
 
 ### `AiTwinPlatform` — the seam (6 protocols, no implementations)
 
-`ScreenProviding` · `WindowManaging` · `IdleMonitoring` · `WakeObserving` ·
+`ScreenProviding` · `WindowManaging` · `IdleMonitoring` · `PresenceObserving` ·
 `LoginItemManaging` · `CharacterPackLoading`
 
 Everything the domain needs from an operating system, and nothing else. The
@@ -103,7 +104,7 @@ whole app minus the bits that happen to be portable".
 | `MacWindowManager.swift` | Show/hide/move. Walk interpolation at 60fps |
 | `MacScreenProvider.swift` | `NSScreen` → `ScreenInfo`, and display-change notifications |
 | `MacIdleMonitor.swift` | `CGEventSource` — **no permissions required** |
-| `MacWakeObserver.swift` | Wake + unlock, coalesced into one greeting |
+| `MacPresenceObserver.swift` | Lock, screensaver, sleep and their inverses, latched into one leaving and one returning |
 | `MacLoginItem.swift` | `SMAppService` |
 | `MacCharacterPackLoader.swift` | Directory scanning + `FrameImageCache` |
 
@@ -181,7 +182,7 @@ Foundation, which is available in the Swift Windows toolchain.
 | `WindowManaging` | Layered window: `WS_EX_LAYERED` + `WS_EX_TRANSPARENT` + `WS_EX_TOOLWINDOW`, `UpdateLayeredWindow` for per-pixel alpha | **Highest.** The closest analogue to a transparent non-activating panel; `WS_EX_NOACTIVATE` covers the focus-stealing half |
 | `ScreenProviding` | `EnumDisplayMonitors`, `GetMonitorInfo` | Low — coordinate space differs (y-down), so conversion belongs in the adapter |
 | `IdleMonitoring` | `GetLastInputInfo` | Low |
-| `WakeObserving` | `WM_POWERBROADCAST` / `PBT_APMRESUMEAUTOMATIC` | Low |
+| `PresenceObserving` | `WM_POWERBROADCAST` for sleep, plus `WTSRegisterSessionNotification` → `WTS_SESSION_LOCK` / `WTS_SESSION_UNLOCK` | Low — and the lock half is *public* API on Windows, unlike macOS |
 | `LoginItemManaging` | `HKCU\...\Run` registry key or Task Scheduler | Low |
 | `CharacterPackLoading` | Same logic, `%APPDATA%\AiTwin\Characters` | Low |
 

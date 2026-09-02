@@ -44,7 +44,11 @@ public final class SettingsViewModel: ObservableObject {
     public var onPreviewClip: ((String) -> Void)?
     public var onStartFocus: (() -> Void)?
     /// Saves the recorded history to a file the user picks.
+    /// What the last export wrote, shown under the export button.
+    @Published public var exportStatus: String?
     public var onExportHistory: (() -> Void)?
+    /// Clears timestamped detail older than the given date. Daily totals stay.
+    public var onClearOldDetail: ((Date) -> Void)?
     /// Installs a pack from a dropped zip or folder.
     public var onImportPack: ((URL) -> Void)?
     public var onBrowseForPack: (() -> Void)?

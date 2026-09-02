@@ -41,7 +41,17 @@ Last updated: **2026-08-30**
 
 ### Greetings
 - [x] Time-of-day greeting on launch (morning / afternoon / evening / late night)
-- [x] Greeting on wake and unlock, coalesced so it fires once
+- [x] Greeting on wake and unlock, latched so it fires once — and never onto a
+      still-locked screen
+
+### Away from the Mac
+- [x] Screen lock, screensaver and sleep all stop the clock
+- [x] Coming back after a real absence **restarts** every cycle, so a reminder
+      never ambushes you the moment you sit down
+- [x] Under a minute away changes nothing — no reset, no greeting
+- [x] She can never appear on the lock screen
+- [x] A focus session ends rather than pausing when you lock
+- [x] A reminder on screen when you lock is taken down and counted as skipped
 - [x] **Your name in Settings** — "Hey Suresh 👋"
 - [x] Multiple creative variants per slot, non-repeating
 - [x] First-run: Settings opens automatically after the first hello

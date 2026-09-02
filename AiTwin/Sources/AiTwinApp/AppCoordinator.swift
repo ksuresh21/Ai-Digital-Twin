@@ -27,7 +27,7 @@ final class AppCoordinator {
     private let windowManager: MacWindowManager
     private let screenProvider: MacScreenProvider
     private let idleMonitor: IdleMonitoring
-    private let wakeObserver: WakeObserving
+    private let presence: PresenceObserving
     private let loginItem: LoginItemManaging
     private let packLoader: MacCharacterPackLoader
     private let dimmer: MacScreenDimmer
@@ -38,6 +38,8 @@ final class AppCoordinator {
     private var focus: FocusController!
     private var chatter = ChatterScheduler()
     private var moods = MoodMonitor()
+    /// Decides whether coming back from a lock is worth resetting for.
+    private var presenceTracker = PresenceTracker()
     private var focusTicker: Timer?
     /// Plays multi-clip routines — sitting, standing, then stretching — so a
     /// behaviour can be choreographed in code rather than baked into one clip.
@@ -65,7 +67,7 @@ final class AppCoordinator {
         configuration: AiTwinConfiguration = .production,
         screenProvider: MacScreenProvider = MacScreenProvider(),
         idleMonitor: IdleMonitoring = MacIdleMonitor(),
-        wakeObserver: WakeObserving = MacWakeObserver(),
+        presence: PresenceObserving = MacPresenceObserver(),
         loginItem: LoginItemManaging = MacLoginItem(),
         packLoader: MacCharacterPackLoader = MacCharacterPackLoader(),
         dimmer: MacScreenDimmer = MacScreenDimmer()
@@ -75,7 +77,7 @@ final class AppCoordinator {
         self.configuration = configuration
         self.screenProvider = screenProvider
         self.idleMonitor = idleMonitor
-        self.wakeObserver = wakeObserver
+        self.presence = presence
         self.loginItem = loginItem
         self.packLoader = packLoader
         self.dimmer = dimmer
@@ -110,7 +112,7 @@ final class AppCoordinator {
         companionModel.bubbleStyle = settings.bubbleStyle
         engine.start()
         startEngineTimer()
-        wakeObserver.start()
+        presence.start()
         // iCloud sync is parked -- see Docs/ROADMAP.md. It cannot be verified
         // without a paid developer account, and leaving it running meant a
         // write to a rate-limited store on every slider tick, plus a merge
@@ -127,7 +129,7 @@ final class AppCoordinator {
         engineTimer = nil
         animationTimer = nil
         stateTimer = nil
-        wakeObserver.stop()
+        presence.stop()
         engine.stop()
         endBreak()
         windowManager.hide()
@@ -163,8 +165,11 @@ final class AppCoordinator {
         focus.onSessionCompleted = { [weak self] minutes in
             MainActor.assumeIsolated { self?.engine.recordFocusSession(minutes: minutes) }
         }
-        wakeObserver.onWake = { [weak self] in
-            MainActor.assumeIsolated { self?.handleWake() }
+        presence.onAway = { [weak self] in
+            MainActor.assumeIsolated { self?.handleAway() }
+        }
+        presence.onBack = { [weak self] in
+            MainActor.assumeIsolated { self?.handleBack() }
         }
         companionModel.onPrimaryAction = { [weak self] in
             MainActor.assumeIsolated { self?.acknowledgeActiveReminder() }
@@ -215,6 +220,14 @@ final class AppCoordinator {
             // Nobody was there. Leave quietly.
             stateMachine.handle(.reminderResolved)
 
+        case .reminderWithdrawn:
+            moods.noteSkipped()
+            // `.reset`, not `.reminderResolved`: resolving walks her off screen
+            // over a second or more, and the screen is already locked. `.reset`
+            // lands in `.hidden` immediately, which stops the animation, ends
+            // any running eye break and undims the display.
+            stateMachine.handle(.reset)
+
         case .waterLogged(let glasses, let goal, let goalJustReached):
             if goalJustReached {
                 // A milestone outranks the everyday goal line.
@@ -248,13 +261,19 @@ final class AppCoordinator {
         // a stale countdown.
         companionModel.countdown = nil
 
-        // Clear the peek flag on entry to anything that is not the peek itself
-        // or its exit. Without this it latched on after the first idle chatter,
-        // and every subsequent walk-out became a 46-point slide -- she simply
-        // stopped leaving the screen.
-        switch state {
-        case .chattering, .leaving: break
-        default: wasPeeking = false
+        // Track whether the pose currently on screen is the peek, so the exit
+        // can match the entrance. Set on entry to *any* state that shows the
+        // peek clip -- the developer previews show it too, and previously only
+        // real chatter set the flag, so previewing a peek ended in a walk-off
+        // and the fix looked broken exactly where it was being tested.
+        //
+        // `.leaving` is excluded from clearing because it is the state that
+        // reads the flag. Without that, the flag also used to latch on and turn
+        // every later walk-out into a short slide.
+        if Self.showsPeekPose(state) {
+            wasPeeking = true
+        } else if state != .leaving {
+            wasPeeking = false
         }
 
         switch state {
@@ -315,6 +334,7 @@ final class AppCoordinator {
                 message: "\(name)  ·  \(routine.steps.count) beats"
             )
             windowManager.setInteractive(false)
+            if Self.showsPeekPose(state) { slideInFromEdge() }
             // An indefinite routine has no natural end, so cap the preview.
             let span = routine.duration > 0 ? routine.duration + 1 : configuration.previewDuration
             scheduleStateEvent(.restTimeout, after: span)
@@ -329,6 +349,7 @@ final class AppCoordinator {
                 message: available ? clip : "\(clip) — no art, using idle"
             )
             windowManager.setInteractive(false)
+            if Self.showsPeekPose(state) { slideInFromEdge() }
             scheduleStateEvent(.restTimeout, after: configuration.previewDuration)
 
         case .feeling(let mood):
@@ -350,10 +371,12 @@ final class AppCoordinator {
             case .sleepy:
                 companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "…")
                 windowManager.setInteractive(false)
-                // Yawn, then settle: two beats, not one animation.
+                // Two yawns and then she goes, at night as much as in the day.
+                // She used to settle into the sleep pose and stay parked on the
+                // desktop until something woke her, which stopped reading as a
+                // nudge to stop working and started reading as clutter.
                 play(.sleepRoutine)
-                scheduleStateEvent(isNight() ? .fellAsleep : .restTimeout,
-                                   after: configuration.greetingDuration + 1.5)
+                scheduleStateEvent(.restTimeout, after: ClipSequence.sleepRoutine.duration)
             }
             pendingMessage = nil
 
@@ -370,21 +393,10 @@ final class AppCoordinator {
             // Leans in from the very edge of the display rather than walking on
             // or popping up mid-screen. The peeking artwork is drawn against a
             // vertical border, so it only makes sense flush to the screen edge.
-            wasPeeking = true
-            facing = settings.corner.isLeft ? .right : .left
             applyClip(named: ClipName.peek)
             companionModel.bubble = CompanionViewModel.Bubble(message: pendingMessage ?? "👋")
             pendingMessage = nil
-            windowManager.setInteractive(false)
-            let resting = peekOrigin()
-            windowManager.setPosition(CharacterPlacement.peekEntryOrigin(
-                corner: settings.corner, size: panelSize,
-                visibleFrame: visibleFrame, offset: configuration.peekSlideDistance,
-                screenFrame: screenFrame
-            ))
-            windowManager.show()
-            startAnimation()
-            windowManager.move(to: resting, duration: 0.45) { }
+            slideInFromEdge()
             // Bounded: she peeks, says her piece and withdraws.
             scheduleStateEvent(.restTimeout, after: configuration.chatterDuration)
 
@@ -451,12 +463,7 @@ final class AppCoordinator {
             stopSequence()
             companionModel.bubble = nil
             windowManager.setInteractive(false)
-            let exit = CharacterPlacement.peekEntryOrigin(
-                corner: settings.corner, size: panelSize,
-                visibleFrame: visibleFrame, offset: configuration.peekSlideDistance,
-                screenFrame: screenFrame
-            )
-            windowManager.move(to: exit, duration: 0.4) { [weak self] in
+            windowManager.move(to: peekEntryOrigin(), duration: 0.4) { [weak self] in
                 MainActor.assumeIsolated { _ = self?.stateMachine.handle(.exitedScreen) }
             }
 
@@ -551,6 +558,18 @@ final class AppCoordinator {
         engine.snooze(kind)
     }
 
+    /// Says hello on demand.
+    ///
+    /// For when someone launches AiTwin while it is already running. macOS does
+    /// not start a second copy, so `applicationDidFinishLaunching` never runs
+    /// again and the launch-time greeting never fires -- the app looked like it
+    /// had done nothing at all. Skipped if she is already on screen, so this
+    /// cannot interrupt a reminder.
+    func greetOnDemand() {
+        guard stateMachine.state == .hidden else { return }
+        greet(catalog.nextGreeting(for: Date(), name: settings.userName))
+    }
+
     func greet(_ message: String) {
         pendingMessage = message
         stateMachine.handle(.summon(.greeting))
@@ -610,6 +629,21 @@ final class AppCoordinator {
         vanish(after: configuration.greetingDuration)
     }
 
+    /// Leans in from just off the screen edge: the peek's entrance.
+    ///
+    /// Shared by real chatter and by the Developer previews, so a preview shows
+    /// the placement and the withdrawal the feature actually has. The exit in
+    /// `.leaving where wasPeeking` is the exact reverse of this.
+    private func slideInFromEdge() {
+        facing = settings.corner.isLeft ? .right : .left
+        companionModel.facing = facing
+        windowManager.setInteractive(false)
+        windowManager.setPosition(peekEntryOrigin())
+        windowManager.show()
+        startAnimation()
+        windowManager.move(to: peekOrigin(), duration: 0.45) { }
+    }
+
     /// Fades the character out in place, then hides the window.
     private func vanish(after delay: TimeInterval) {
         stateTimer?.invalidate()
@@ -658,8 +692,27 @@ final class AppCoordinator {
     private var celebrationRoutine = ClipSequence.waterLoggedRoutine
     /// A celebration with no words -- used after you log a glass of water.
     private var silentCelebration = false
-    /// True while the current visit is a peek, so the exit matches the entrance.
+    /// True while the pose on screen is the peek, so the exit matches the
+    /// entrance: she withdraws around the edge instead of walking off.
     private var wasPeeking = false
+
+    /// Whether a state draws the peeking pose.
+    ///
+    /// Chatter is the real one; the two preview states matter because the
+    /// Developer tab is how the behaviour gets checked, and a preview that
+    /// walks off is not previewing the behaviour.
+    private static func showsPeekPose(_ state: CharacterState) -> Bool {
+        switch state {
+        case .chattering:
+            return true
+        case .previewing(let clip):
+            return clip == ClipName.peek
+        case .previewingSequence(let name):
+            return name == ClipSequence.peekRoutine.name
+        default:
+            return false
+        }
+    }
     /// Set when the next exit should be brisk rather than a stroll.
     private var hurriedExit = false
 
@@ -758,6 +811,19 @@ final class AppCoordinator {
     var currentStreak: Int { engine.currentStreak() }
     var bestStreak: Int { engine.bestStreak() }
     var activityLog: ActivityLog { engine.activityLog }
+
+    /// Drops hour-by-hour detail recorded before `cutoff`. Every daily total is
+    /// kept -- see `DataRetention` for why the two halves differ.
+    func clearOldDetail(before cutoff: Date) {
+        engine.clearEventDetail(before: cutoff)
+    }
+
+    /// The hour-by-hour detail as CSV. Empty of rows when nothing is recorded.
+    func exportEventsCSV() -> String {
+        engine.activityLog.eventsCSV()
+    }
+
+    var hasDetailToExport: Bool { !engine.activityLog.events.isEmpty }
 
     /// The history as CSV, ready to save.
     func exportCSV() -> String {
@@ -934,6 +1000,13 @@ final class AppCoordinator {
                 guard let self else { return }
                 let idle = self.idleMonitor.idleSeconds
                 self.engine.tick(idleSeconds: idle)
+                // Nothing below may run while the screen is locked. Pausing the
+                // engine is not enough on its own: moods and chatter build
+                // their own conditions and their only away-guard is a
+                // three-minute idle threshold, while the idle monitor counts
+                // password typing at the login window as activity. Without this
+                // she could peek onto a lock screen.
+                guard !self.engine.isAway else { return }
                 self.updateMoodMonitor(idleSeconds: idle)
                 // A mood is the more meaningful interruption, so it gets first
                 // refusal; chatter only fills the silence it leaves.
@@ -1089,7 +1162,43 @@ final class AppCoordinator {
     private func peekOrigin() -> GPoint {
         CharacterPlacement.peekOrigin(
             corner: settings.corner, size: panelSize,
-            visibleFrame: visibleFrame, screenFrame: screenFrame
+            visibleFrame: visibleFrame, screenFrame: screenFrame,
+            artInset: peekArtInset
+        )
+    }
+
+    /// Just off the edge, far enough that none of her shows.
+    private func peekEntryOrigin() -> GPoint {
+        CharacterPlacement.peekEntryOrigin(
+            corner: settings.corner, size: panelSize,
+            visibleFrame: visibleFrame,
+            artInset: peekArtInset, artWidth: peekArtWidth,
+            screenFrame: screenFrame
+        )
+    }
+
+    /// How far her first visible pixel sits inside the panel's own edge.
+    ///
+    /// Zero for a pack whose peek art could not be measured, which restores the
+    /// old panel-aligned behaviour rather than guessing.
+    private var peekArtInset: Double {
+        guard let pack, let bounds = pack.peekBounds else { return 0 }
+        return CompanionLayout.edgeArtInset(
+            panelWidth: panelSize.width,
+            frameHeight: frameHeight,
+            canvasAspectRatio: pack.canvasAspectRatio,
+            leadingFraction: bounds.leadingFraction
+        )
+    }
+
+    private var peekArtWidth: Double {
+        guard let pack, let bounds = pack.peekBounds else {
+            return configuration.peekSlideDistance
+        }
+        return CompanionLayout.artWidth(
+            frameHeight: frameHeight,
+            canvasAspectRatio: pack.canvasAspectRatio,
+            widthFraction: bounds.widthFraction
         )
     }
 
@@ -1114,10 +1223,56 @@ final class AppCoordinator {
         ensureAnimationMatchesVisibility()
     }
 
-    private func handleWake() {
+    // MARK: Away and back
+
+    /// The screen locked, the Mac slept, or the screensaver came on.
+    private func handleAway() {
+        guard presenceTracker.noteAway(at: Date()) else { return }
+
+        // A focus session does not survive a lock. Ending it rather than
+        // pausing it is deliberate: a Pomodoro you walked away from halfway is
+        // not a Pomodoro, and `focus.stop()` deliberately does not report a
+        // completed session, so nothing is logged for work that did not happen.
+        //
+        // Must run before the reset below, because it checks for `.focusing`.
+        if focus.isActive { stopFocusSession() }
+
+        // Stops every countdown and withdraws anything already on screen.
+        engine.beginAway()
+
+        // Drop the unbroken-work stretch, so a locked screen can never count
+        // toward "you have been at this for three hours".
+        moods.noteAway()
+
+        // Straight to hidden rather than a walk-out: the display is already off
+        // or locked, so an exit animation is a second of work nobody can see.
+        // `.hidden` is also what stops the animation timer, ends any running
+        // eye break and undims the screen.
+        stateMachine.handle(.reset)
+    }
+
+    /// The user unlocked, or the Mac woke.
+    private func handleBack() {
+        let now = Date()
+        switch presenceTracker.noteBack(at: now) {
+        case .spurious:
+            return
+        case .brief:
+            // A minute fetching a coffee. Pick up exactly where she left off:
+            // no reset, no hello.
+            engine.endAway(resetCycles: false)
+        case .significant:
+            // Time away from the Mac is not screen time, so every cycle starts
+            // again from the moment they sat back down.
+            engine.endAway(resetCycles: true)
+            greetOnReturn(at: now)
+        }
+    }
+
+    private func greetOnReturn(at now: Date) {
         guard settings.greetOnWake, !settings.remindersPaused else { return }
-        guard !settings.quietHours.contains(Date()) else { return }
+        guard !settings.quietHours.contains(now) else { return }
         guard stateMachine.state == .hidden else { return }
-        greet(catalog.nextWakeGreeting(for: Date(), name: settings.userName))
+        greet(catalog.nextWakeGreeting(for: now, name: settings.userName))
     }
 }

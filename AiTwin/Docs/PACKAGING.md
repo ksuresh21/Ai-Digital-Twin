@@ -103,6 +103,18 @@ AiTwin is **not** sandboxed, deliberately. A sandboxed app cannot freely read
 the Mac App Store and not otherwise, and direct distribution is the better fit
 for a small companion app.
 
+There is now a second obstacle to the App Store, worth knowing before anyone
+tries. Screen-lock detection uses two **undocumented** distributed
+notifications, `com.apple.screenIsLocked` and `com.apple.screenIsUnlocked` (see
+`MacPresenceObserver.swift`). No public API reports the screen lock. They need
+no entitlement in an unsandboxed, ad-hoc-signed build like this one, but a
+sandboxed build is not guaranteed to receive them, and shipping private
+notification names is a review risk.
+
+If AiTwin ever has to be sandboxed, the lock half degrades on its own: the
+observer latches sleep and fast user switching through public API, so it keeps
+working at coarser granularity rather than breaking.
+
 ---
 
 ## Publishing a release

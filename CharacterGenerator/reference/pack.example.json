@@ -1,0 +1,23 @@
+{
+  "characterHeight": 470,
+  "canvasHeight": 744,
+  "canvasWidth": 466,
+  "baseline": 728,
+  "clipTopFractions": {
+    "idle": 0.2567,
+    "idle_glasses": 0.3454,
+    "concerned": 0.2715,
+    "stretch": 0.2218,
+    "sleep": 0.25,
+    "wave": 0.2581,
+    "walk": 0.2648,
+    "focus": 0.4315,
+    "happy": 0.1788,
+    "drink": 0.25,
+    "sitting": 0.4341,
+    "cheer": 0.0134,
+    "eyebreak": 0.254,
+    "peek": 0.3468,
+    "yawn": 0.2688
+  }
+}

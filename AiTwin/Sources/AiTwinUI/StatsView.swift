@@ -1,10 +1,14 @@
 import SwiftUI
 import AiTwinCore
 
-/// Streaks and the last seven days.
+/// What you actually did — today, or across the last week.
 ///
-/// Deliberately small: a bar chart, two numbers, and an honest acceptance rate.
-/// A wellbeing app that turns into a dashboard stops being a companion.
+/// The previous version of this screen charted whatever the data happened to
+/// contain: a bar per day of raw glass counts, and an eye-break "acceptance
+/// rate" as a percentage. Neither answered the question anyone actually has,
+/// which is *what did I do today*. So this asks that instead, in plain
+/// quantities, with the week behind a picker rather than mixed into the same
+/// view.
 public struct StatsView: View {
     let log: ActivityLog
     let streak: Int
@@ -13,143 +17,343 @@ public struct StatsView: View {
 
     /// Called when the user asks for the history as a file.
     let onExport: (() -> Void)?
+    /// Called when the user agrees to clear detail older than the given date.
+    let onClearOldDetail: ((Date) -> Void)?
+    /// What the last export wrote, if anything.
+    let exportStatus: String?
+
+    @State private var range: Range = .today
 
     public init(log: ActivityLog, streak: Int, best: Int, intake: WaterIntake,
-                onExport: (() -> Void)? = nil) {
+                exportStatus: String? = nil,
+                onExport: (() -> Void)? = nil,
+                onClearOldDetail: ((Date) -> Void)? = nil) {
+        self.exportStatus = exportStatus
         self.log = log
         self.streak = streak
         self.best = best
         self.intake = intake
         self.onExport = onExport
+        self.onClearOldDetail = onClearOldDetail
     }
 
-    private var week: [DailyRecord] { log.recentDays(7, endingAt: Date()) }
+    enum Range: String, CaseIterable, Identifiable {
+        case today, week
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .today: return "Today"
+            case .week:  return "Last 7 days"
+            }
+        }
+    }
+
+    private var now: Date { Date() }
+    private var today: DaySummary {
+        DaySummary.from(log.record(on: now) ?? DailyRecord(dayStart: now), intake: intake)
+    }
+    private var week: [DaySummary] {
+        log.recentDays(7, endingAt: now).map { DaySummary.from($0, intake: intake) }
+    }
 
     public var body: some View {
         Form {
-            Section("Streak") {
-                HStack(spacing: 24) {
-                    StatTile(value: "\(streak)", label: streak == 1 ? "day" : "days", accent: true)
-                    StatTile(value: "\(best)", label: "best")
-                    StatTile(
-                        value: WaterIntake.format(
-                            millilitres: intake.millilitres(forGlasses: log.totalGlasses(inLast: 7, endingAt: Date()))
-                        ),
-                        label: "this week"
+            if case .offerClearing(let count, let cutoff) =
+                DataRetention.notice(for: log, at: now) {
+                Section {
+                    OldDetailBanner(
+                        message: DataRetention.explanation(events: count, upTo: cutoff),
+                        onExport: onExport,
+                        onClear: onClearOldDetail == nil ? nil : { onClearOldDetail?(cutoff) }
                     )
                 }
-                .frame(maxWidth: .infinity)
+            }
 
-                if streak == 0 {
-                    Text("Hit your daily water goal to start a streak.")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else if let next = ActivityLog.milestones.first(where: { $0 > streak }) {
-                    Text("\(next - streak) more day\(next - streak == 1 ? "" : "s") to the \(next)-day milestone.")
-                        .font(.caption).foregroundStyle(.secondary)
+            Section {
+                Picker("Showing", selection: $range) {
+                    ForEach(Range.allCases) { Text($0.title).tag($0) }
                 }
+                .pickerStyle(.segmented)
+                .labelsHidden()
             }
 
-            Section("Last 7 days") {
-                WeekChart(week: week, intake: intake)
-                    .frame(height: 118)
-            }
-
-            Section("Eye breaks") {
-                BreakBreakdown(week: week)
+            switch range {
+            case .today: todaySections
+            case .week:  weekSections
             }
 
             Section("Your data") {
-                Text("Everything above is stored on this Mac only. Export it as a CSV to open in Numbers, Excel or anything else.")
-                    .font(.caption).foregroundStyle(.secondary)
+                Text("Everything here is stored on this Mac only, and never leaves it. "
+                     + "Daily totals are kept for good; export them as a CSV to open in "
+                     + "Numbers or Excel.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 HStack {
-                    Button("Export History as CSV…") { onExport?() }
-                    Text("\(log.days.count) day\(log.days.count == 1 ? "" : "s") recorded")
-                        .font(.caption).foregroundStyle(.secondary)
+                    Button("Export as CSV…") { onExport?() }
+                    Spacer()
+                    Text(log.days.isEmpty
+                         ? "Nothing recorded yet"
+                         : "\(log.days.count) day\(log.days.count == 1 ? "" : "s") recorded")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
-                if log.days.isEmpty {
-                    Text("Nothing recorded yet — the chart fills in as you use the app.")
-                        .font(.caption).foregroundStyle(.orange)
-                }
-            }
-
-            Section("Focus") {
-                let minutes = log.totalFocusMinutes(inLast: 7, endingAt: Date())
-                let sessions = week.reduce(0) { $0 + $1.focusSessionsCompleted }
-                if sessions == 0 {
-                    Text("No focus sessions yet this week. Start one from the menu bar.")
-                        .font(.caption).foregroundStyle(.secondary)
-                } else {
-                    Text("\(sessions) session\(sessions == 1 ? "" : "s"), \(Int(minutes)) minutes this week.")
-                        .font(.callout)
+                if let exportStatus {
+                    Text(exportStatus)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .formStyle(.grouped)
     }
-}
 
-struct StatTile: View {
-    let value: String
-    let label: String
-    var accent: Bool = false
+    // MARK: Today
 
-    var body: some View {
-        VStack(spacing: 2) {
-            Text(value)
-                .font(.system(size: 26, weight: .semibold, design: .rounded))
-                .foregroundStyle(accent ? Color.accentColor : Color.primary)
-            Text(label)
+    @ViewBuilder
+    private var todaySections: some View {
+        Section("Today") {
+            WaterRow(day: today, intake: intake)
+            ActivityRow(label: "Eye breaks taken", value: "\(today.eyeBreaksTaken)",
+                        detail: today.eyeBreaksSnoozed + today.eyeBreaksMissed > 0
+                            ? "\(today.eyeBreaksSnoozed) snoozed · \(today.eyeBreaksMissed) missed"
+                            : nil)
+            ActivityRow(label: "Stretches done", value: "\(today.stretchesTaken)",
+                        detail: today.stretchesSnoozed + today.stretchesMissed > 0
+                            ? "\(today.stretchesSnoozed) snoozed · \(today.stretchesMissed) missed"
+                            : nil)
+            ActivityRow(label: "Focus sessions", value: "\(today.focusSessions)",
+                        detail: today.focusMinutes > 0 ? "\(Int(today.focusMinutes)) minutes" : nil)
+            ActivityRow(label: "Skipped altogether", value: "\(today.skipped)",
+                        detail: "snoozed or missed, both kinds")
+        }
+
+        Section("Through the day") {
+            let events = log.events(on: now)
+            if events.isEmpty {
+                Text(log.events.isEmpty
+                     ? "The hour-by-hour view starts recording from today onwards — it "
+                       + "cannot show days that have already passed."
+                     : "Nothing logged yet today.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                HourLine(buckets: HourlyActivity.buckets(from: events))
+                    .frame(height: 110)
+                if let busiest = HourlyActivity.busiestHour(HourlyActivity.buckets(from: events)) {
+                    Text("Busiest around \(Self.hourLabel(busiest.hour)).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+
+        streakSection
+    }
+
+    // MARK: Last 7 days
+
+    @ViewBuilder
+    private var weekSections: some View {
+        Section("Water") {
+            DayBars(values: week.map { Double($0.millilitres) },
+                    days: week.map(\.dayStart),
+                    goal: week.last.map { Double($0.goalMillilitres) },
+                    format: { WaterIntake.format(millilitres: Int($0)) })
+        }
+        Section("Eye breaks taken") {
+            DayBars(values: week.map { Double($0.eyeBreaksTaken) },
+                    days: week.map(\.dayStart), goal: nil,
+                    format: { "\(Int($0))" })
+        }
+        Section("Stretches done") {
+            DayBars(values: week.map { Double($0.stretchesTaken) },
+                    days: week.map(\.dayStart), goal: nil,
+                    format: { "\(Int($0))" })
+        }
+        Section("Focus minutes") {
+            DayBars(values: week.map(\.focusMinutes),
+                    days: week.map(\.dayStart), goal: nil,
+                    format: { "\(Int($0)) min" })
+        }
+        Section("This week") {
+            let skipped = week.reduce(0) { $0 + $1.skipped }
+            ActivityRow(label: "Skipped altogether", value: "\(skipped)",
+                        detail: "snoozed or missed, across the week")
+        }
+
+        streakSection
+    }
+
+    // MARK: Streak
+
+    @ViewBuilder
+    private var streakSection: some View {
+        Section("Streak") {
+            // The old version showed two bare numbers labelled "Current" and
+            // "Best", which never said what a streak was counting.
+            Text(streak == 0
+                 ? "A streak is the number of days in a row you reach your daily water goal of \(WaterIntake.format(millilitres: intake.dailyGoal)). Hit it today to start one."
+                 : "\(streak) day\(streak == 1 ? "" : "s") in a row reaching your \(WaterIntake.format(millilitres: intake.dailyGoal)) water goal.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if best > 0 {
+                LabeledContent("Longest so far", value: "\(best) day\(best == 1 ? "" : "s")")
+            }
+        }
+    }
+
+    static func hourLabel(_ hour: Int) -> String {
+        var components = DateComponents()
+        components.hour = hour
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h a"
+        let date = Calendar.current.date(from: components) ?? Date()
+        return formatter.string(from: date)
+    }
+}
+
+// MARK: - Rows
+
+/// Water gets its own row: it is the one activity with a daily target, so a
+/// bare count would lose the only thing that makes it meaningful.
+struct WaterRow: View {
+    let day: DaySummary
+    let intake: WaterIntake
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text("Water")
+                Spacer()
+                Text("\(WaterIntake.format(millilitres: day.millilitres)) of \(WaterIntake.format(millilitres: day.goalMillilitres))")
+                    .monospacedDigit()
+                    .foregroundStyle(day.metWaterGoal ? Color.green : .primary)
+            }
+            ProgressView(value: day.waterProgress)
+                .tint(day.metWaterGoal ? .green : .accentColor)
         }
     }
 }
 
-/// Glasses per day, with the goal marked.
-struct WeekChart: View {
-    let week: [DailyRecord]
-    let intake: WaterIntake
-
-    /// Charted in millilitres, which is what the goal is expressed in.
-    private var values: [Int] { week.map { intake.millilitres(forGlasses: $0.glasses) } }
-    private var scale: Int { max(intake.dailyGoal, values.max() ?? 0, 1) }
+struct ActivityRow: View {
+    let label: String
+    let value: String
+    let detail: String?
 
     var body: some View {
-        GeometryReader { geo in
-            let barWidth = max(8.0, geo.size.width / Double(max(week.count, 1)) - 10)
-            let chartHeight = geo.size.height - 20
-            // The goal line only means something once a goal is set.
-            let goalY = chartHeight * (1 - Double(intake.dailyGoal) / Double(scale))
-
-            ZStack(alignment: .topLeading) {
-                if true {
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: goalY))
-                        path.addLine(to: CGPoint(x: geo.size.width, y: goalY))
-                    }
-                    .stroke(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
-                }
-
-                HStack(alignment: .bottom, spacing: 10) {
-                    ForEach(Array(week.enumerated()), id: \.element.dayStart) { index, day in
-                        let millilitres = intake.millilitres(forGlasses: day.glasses)
-                        VStack(spacing: 4) {
-                            Spacer(minLength: 0)
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(millilitres >= intake.dailyGoal ? Color.accentColor : Color.secondary.opacity(0.45))
-                                .frame(
-                                    width: barWidth,
-                                    height: max(2, chartHeight * Double(millilitres) / Double(scale))
-                                )
-                            Text(Self.weekdayLetter(day.dayStart))
-                                .font(.system(size: 9))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(height: geo.size.height, alignment: .bottom)
-                    }
+        LabeledContent {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(value).monospacedDigit()
+                if let detail {
+                    Text(detail).font(.caption).foregroundStyle(.secondary)
                 }
             }
+        } label: {
+            Text(label)
         }
+    }
+}
+
+// MARK: - Charts
+
+/// Today, hour by hour. A line rather than bars: hours are continuous, so the
+/// shape of the day is the point.
+struct HourLine: View {
+    let buckets: [HourlyActivity.Bucket]
+
+    private var peak: Double { max(1, Double(buckets.map(\.count).max() ?? 1)) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = geometry.size.width
+            let height = geometry.size.height - 16
+            let step = buckets.count > 1 ? width / Double(buckets.count - 1) : width
+            // Precomputed: a result builder cannot contain a function
+            // declaration, and inlining the maths twice would drift.
+            let points = buckets.indices.map { index in
+                CGPoint(x: Double(index) * step,
+                        y: height - (Double(buckets[index].count) / peak) * height)
+            }
+
+            ZStack(alignment: .bottomLeading) {
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: CGPoint(x: 0, y: height))
+                    path.addLine(to: first)
+                    for point in points.dropFirst() { path.addLine(to: point) }
+                    path.addLine(to: CGPoint(x: width, y: height))
+                    path.closeSubpath()
+                }
+                .fill(LinearGradient(colors: [Color.accentColor.opacity(0.28), .clear],
+                                     startPoint: .top, endPoint: .bottom))
+
+                Path { path in
+                    guard let first = points.first else { return }
+                    path.move(to: first)
+                    for point in points.dropFirst() { path.addLine(to: point) }
+                }
+                .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+
+                // Six-hourly ticks: a label per hour is unreadable at this width.
+                HStack(spacing: 0) {
+                    ForEach([0, 6, 12, 18], id: \.self) { hour in
+                        Text(StatsView.hourLabel(hour))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                            .frame(width: width / 4, alignment: .leading)
+                    }
+                }
+                .offset(y: 8)
+            }
+        }
+    }
+}
+
+/// One metric across seven days. Bars, because days are discrete buckets and a
+/// line between them would imply values that do not exist.
+struct DayBars: View {
+    let values: [Double]
+    let days: [Date]
+    let goal: Double?
+    let format: (Double) -> String
+
+    private var peak: Double { max(goal ?? 0, values.max() ?? 0, 1) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .bottom, spacing: 6) {
+                ForEach(Array(values.enumerated()), id: \.offset) { index, value in
+                    VStack(spacing: 3) {
+                        Spacer(minLength: 0)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(barColour(value))
+                            .frame(height: max(2, (value / peak) * 56))
+                        Text(Self.weekdayLetter(days[index]))
+                            .font(.system(size: 9))
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 74)
+
+            let total = values.reduce(0, +)
+            Text(values.allSatisfy { $0 == 0 }
+                 ? "Nothing recorded this week."
+                 : "\(format(total)) over 7 days · best day \(format(values.max() ?? 0))")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func barColour(_ value: Double) -> Color {
+        guard let goal, goal > 0 else {
+            return value > 0 ? Color.accentColor.opacity(0.85) : Color.secondary.opacity(0.18)
+        }
+        if value <= 0 { return Color.secondary.opacity(0.18) }
+        return value >= goal ? .green : Color.accentColor.opacity(0.85)
     }
 
     static func weekdayLetter(_ date: Date) -> String {
@@ -159,56 +363,39 @@ struct WeekChart: View {
     }
 }
 
-/// Accepted vs snoozed vs ignored — the number that would actually change behaviour.
-struct BreakBreakdown: View {
-    let week: [DailyRecord]
+// MARK: - Retention banner
 
-    private var accepted: Int { week.reduce(0) { $0 + $1.eyeBreaksAccepted } }
-    private var snoozed: Int { week.reduce(0) { $0 + $1.eyeBreaksSnoozed } }
-    private var ignored: Int { week.reduce(0) { $0 + $1.eyeBreaksIgnored } }
-    private var total: Int { accepted + snoozed + ignored }
+/// Offers to clear out old hour-by-hour detail. Never acts on its own.
+struct OldDetailBanner: View {
+    let message: String
+    let onExport: (() -> Void)?
+    let onClear: (() -> Void)?
+
+    @State private var confirming = false
 
     var body: some View {
-        if total == 0 {
-            Text("No eye breaks offered yet this week.")
-                .font(.caption).foregroundStyle(.secondary)
-        } else {
-            VStack(alignment: .leading, spacing: 8) {
-                GeometryReader { geo in
-                    HStack(spacing: 2) {
-                        segment(accepted, geo.size.width, .green)
-                        segment(snoozed, geo.size.width, .orange)
-                        segment(ignored, geo.size.width, .secondary.opacity(0.5))
-                    }
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .foregroundStyle(.secondary)
+                Text(message)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Button("Export as CSV…") { onExport?() }
+                if onClear != nil {
+                    Button("Clear Old Detail…") { confirming = true }
                 }
-                .frame(height: 10)
-
-                HStack(spacing: 14) {
-                    legend("Taken", accepted, .green)
-                    legend("Snoozed", snoozed, .orange)
-                    legend("Missed", ignored, .secondary)
-                }
-                .font(.caption)
-
-                Text("You took \(Int((Double(accepted) / Double(total) * 100).rounded()))% of the breaks offered.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
         }
-    }
-
-    @ViewBuilder
-    private func segment(_ count: Int, _ width: Double, _ colour: Color) -> some View {
-        if count > 0 {
-            RoundedRectangle(cornerRadius: 2)
-                .fill(colour)
-                .frame(width: max(2, width * Double(count) / Double(total)))
-        }
-    }
-
-    private func legend(_ title: String, _ count: Int, _ colour: Color) -> some View {
-        HStack(spacing: 4) {
-            Circle().fill(colour).frame(width: 7, height: 7)
-            Text("\(title) \(count)").foregroundStyle(.secondary)
+        .confirmationDialog("Clear the old hour-by-hour detail?",
+                            isPresented: $confirming, titleVisibility: .visible) {
+            Button("Clear Old Detail", role: .destructive) { onClear?() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your daily totals and streaks are not affected — only the detail "
+                 + "behind the by-hour view is removed. This cannot be undone.")
         }
     }
 }

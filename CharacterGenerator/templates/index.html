@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AiTwin Character Pack Studio</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="mark">AT</span><strong>Character Pack Studio</strong></div>
+    <span class="workflow-pill">Manual generation · no API required</span>
+  </header>
+
+  <main>
+    <section id="setup-screen" class="screen">
+      <div class="hero">
+        <p class="eyebrow">REAL PHOTO → PIXEL COMPANION → INSTALLABLE PACK</p>
+        <h1>Create the prompts first.</h1>
+        <p>Choose a human or pet. The studio prepares complete prompts for ChatGPT or Gemini, then imports all downloaded images from one folder.</p>
+      </div>
+      <form id="setup-form">
+        <div class="setup-grid manual-setup">
+          <div class="panel basics-panel">
+            <h2>1. Character type</h2>
+            <div class="subject-picker" role="radiogroup" aria-label="Character type">
+              <label><input type="radio" name="subject-type" value="human" checked><span><b>Human</b><small>Clothes, hair and identity</small></span></label>
+              <label><input type="radio" name="subject-type" value="pet"><span><b>Pet</b><small>Natural species anatomy</small></span></label>
+            </div>
+            <label>Pack name<input id="pack-name" required placeholder="Nish" maxlength="80"></label>
+            <label>Target character height<input id="height" type="number" value="470" min="32" max="4096"></label>
+            <div class="note"><b>No photo is uploaded here.</b> When using Prompt 1 in ChatGPT or Gemini, attach the real photograph there.</div>
+          </div>
+          <div class="panel sheet-panel">
+            <h2>2. Character details <small>optional</small></h2>
+            <p class="panel-copy">The attached photo is definitive. Fill only details you want the model to enforce or details hidden by the photo.</p>
+            <div class="field-grid subject-fields" data-subject-fields="human">
+              {% for key, example in human_placeholders.items() %}
+              <label>{{ key.replace('_', ' ') }}<input data-sheet="{{ key }}" placeholder="{{ example }}" maxlength="300"></label>
+              {% endfor %}
+            </div>
+            <div class="field-grid subject-fields" data-subject-fields="pet" hidden>
+              {% for key, example in pet_placeholders.items() %}
+              <label>{{ key.replace('_', ' ') }}<input data-sheet="{{ key }}" placeholder="{{ example }}" maxlength="300"></label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <div class="panel clips-panel">
+          <div class="panel-heading"><div><h2>3. Animation clips</h2><p>Idle is required; every other clip can be omitted and will fall back safely.</p></div><strong id="estimate">15 images total</strong></div>
+          <div class="clip-picker">
+            {% for clip in clips %}
+            <label class="clip-choice"><input type="checkbox" data-clip="{{ clip.name }}" checked {% if clip.name == 'idle' %}disabled{% endif %}><span><b>{{ clip.name }}</b><small>{{ clip.ask }} frames{% if clip.loops %} · loops{% endif %}</small></span></label>
+            {% endfor %}
+          </div>
+        </div>
+        <div id="setup-error" class="error" hidden></div>
+        <div class="actions"><button class="primary" type="submit">Prepare all prompts <span>→</span></button></div>
+      </form>
+    </section>
+
+    <section id="prompt-screen" class="screen" hidden>
+      <div class="review-header prompt-header">
+        <div><p class="eyebrow">MANUAL GENERATION</p><h1 id="prompt-name">Your character</h1></div>
+        <div><strong id="prompt-progress">1 reference + 14 clip sheets</strong><small>Use ChatGPT or Gemini in your browser</small><button class="text-button new-character">Start over</button></div>
+      </div>
+      <div class="workflow-steps">
+        <div><span>1</span><p><b>Create reference.png</b>Attach the real photo and use Prompt 1.</p></div>
+        <div><span>2</span><p><b>Create every clip sheet</b>Attach reference.png to every clip prompt.</p></div>
+        <div><span>3</span><p><b>Import one folder</b>Use the filenames shown below.</p></div>
+      </div>
+      <article class="prompt-card reference-prompt-card">
+        <div class="prompt-card-heading"><div><span class="prompt-number">01</span><div><h2>Base reference</h2><code>reference.png</code></div></div><button class="copy-button" data-copy="reference-prompt">Copy prompt</button></div>
+        <p>Attach the real human/pet photograph to this first prompt. Iterate until the single sprite looks right; every animation depends on it.</p>
+        <textarea id="reference-prompt" class="prompt-text" readonly spellcheck="false"></textarea>
+      </article>
+      <div class="prompt-section-heading"><div><p class="eyebrow">ANIMATION SHEETS</p><h2>Attach reference.png every time</h2></div><p>Each prompt requests one horizontal contact sheet. A 16:9 output is acceptable—the importer normalizes final frames.</p></div>
+      <div id="prompt-grid" class="prompt-grid"></div>
+      <section class="panel import-panel">
+        <div class="import-heading"><div><p class="eyebrow">WHEN ALL IMAGES ARE READY</p><h2>Select the containing folder</h2><p>The folder may contain PNG, JPEG, WebP, or TIFF images. PNG is preferred.</p></div><span id="expected-files"></span></div>
+        <div id="filename-list" class="filename-list"></div>
+        <label class="folder-picker">
+          <input id="folder-input" type="file" webkitdirectory directory multiple accept="image/png,image/jpeg,image/webp,image/tiff">
+          <span><b id="folder-label">Choose generated-images folder</b><small>Nothing is uploaded to the internet; files go only to this local Flask app.</small></span>
+        </label>
+        <div id="import-error" class="error" hidden></div>
+        <div class="actions"><button id="import-button" class="primary" type="button" disabled>Process selected folder <span>→</span></button></div>
+      </section>
+    </section>
+
+    <section id="review-screen" class="screen" hidden>
+      <div class="review-header">
+        <div><p class="eyebrow">REVIEW PROCESSED ART</p><h1 id="review-name">Your character</h1></div>
+        <div><strong id="progress-text">Loading…</strong><small id="import-summary"></small><button class="text-button new-character">Start new character</button></div>
+      </div>
+      <div id="run-error" class="error run-error" hidden></div>
+      <div id="reference-cleanup" class="reference-summary"></div>
+      <div id="clip-grid" class="review-grid"></div>
+      <div class="build-bar">
+        <div><strong>Review every animation.</strong><span id="build-hint">Idle must be ready first.</span></div>
+        <div class="build-actions"><button id="reimport-button" class="secondary">Re-import folder</button><button id="build-button" class="primary" disabled>Build pack <span>↓</span></button></div>
+      </div>
+    </section>
+
+    <section id="build-screen" class="screen" hidden>
+      <div class="build-result panel">
+        <p class="eyebrow">PACK COMPLETE</p>
+        <h1>Your character is ready.</h1>
+        <p>Inspect the summary, then drag the downloaded ZIP onto AiTwin → Settings → Character.</p>
+        <div id="build-summary"></div>
+        <div class="actions"><a id="download-link" class="primary button-link">Download pack ↓</a><button id="back-review" class="secondary">Back to review</button><button class="secondary new-character">Start new character</button></div>
+      </div>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

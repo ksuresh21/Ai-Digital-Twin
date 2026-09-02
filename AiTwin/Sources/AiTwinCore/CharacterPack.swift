@@ -24,10 +24,44 @@ public struct CharacterPack: Equatable, Sendable {
     /// 1.0 for a pack with no manifest, which is the old behaviour.
     public let characterHeightFraction: Double
 
-    public init(name: String, clips: [String: AnimationClip], characterHeightFraction: Double = 1) {
+    /// Frame width divided by frame height. Needed to work out how wide the
+    /// drawing actually is once it has been scaled to fit a panel, which the
+    /// peek placement depends on.
+    public let canvasAspectRatio: Double
+
+    /// Where the peeking pose's pixels sit inside its canvas.
+    ///
+    /// Measured from the artwork at load time rather than read from
+    /// `pack.json`, which carries vertical information only. Nil for a pack
+    /// whose art could not be measured, in which case the peek falls back to
+    /// aligning the panel itself — the old, slightly-inset behaviour.
+    public let peekBounds: ClipBounds?
+
+    /// A clip's horizontal extent, as fractions of its canvas width.
+    public struct ClipBounds: Equatable, Sendable {
+        /// Distance from the canvas's leading edge to the first visible pixel.
+        public let leadingFraction: Double
+        /// How much of the canvas width the visible pixels span.
+        public let widthFraction: Double
+
+        public init(leadingFraction: Double, widthFraction: Double) {
+            self.leadingFraction = min(1, max(0, leadingFraction))
+            self.widthFraction = min(1, max(0, widthFraction))
+        }
+    }
+
+    public init(
+        name: String,
+        clips: [String: AnimationClip],
+        characterHeightFraction: Double = 1,
+        canvasAspectRatio: Double = CompanionLayout.characterAspectRatio,
+        peekBounds: ClipBounds? = nil
+    ) {
         self.name = name
         self.clips = clips
         self.characterHeightFraction = min(1, max(0.1, characterHeightFraction))
+        self.canvasAspectRatio = max(0.05, canvasAspectRatio)
+        self.peekBounds = peekBounds
     }
 
     /// The frame height needed for the character to measure `characterHeight`.

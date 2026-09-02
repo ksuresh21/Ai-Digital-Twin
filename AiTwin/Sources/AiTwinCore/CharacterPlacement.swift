@@ -72,14 +72,24 @@ public enum CharacterPlacement {
     ///   rather than the visible frame, so she appears at the literal edge of
     ///   the screen even when the Dock insets the usable area — leaning in from
     ///   a point 60 pixels inside the edge reads as hovering, not peeking.
+    /// - Parameter artInset: how far her first visible pixel sits from the
+    ///   panel's own edge. The panel is wider than the drawing — its width has a
+    ///   240pt floor so a speech bubble is not squeezed into a column, and the
+    ///   artwork is centred inside it — so aligning the *panel* to the screen
+    ///   edge left her tens of points inside it, hovering rather than peeking.
+    ///   Subtracting the inset puts her first pixel exactly on the edge.
     public static func peekOrigin(
         corner: ScreenCorner,
         size: GSize,
         visibleFrame: GRect,
-        screenFrame: GRect? = nil
+        screenFrame: GRect? = nil,
+        artInset: Double = 0
     ) -> GPoint {
         let edge = screenFrame ?? visibleFrame
-        let x = corner.isLeft ? edge.minX : edge.maxX - size.width
+        let inset = max(0, artInset)
+        let x = corner.isLeft
+            ? edge.minX - inset
+            : edge.maxX - size.width + inset
         let y = corner.isBottom
             ? visibleFrame.minY
             : visibleFrame.maxY - size.height
@@ -92,16 +102,28 @@ public enum CharacterPlacement {
 
     /// Where the peek slides in from: the same height, just off screen, so the
     /// motion is a short lean rather than a walk across the desktop.
+    ///
+    /// The travel is derived rather than fixed. A constant slide distance has
+    /// to be guessed against artwork it cannot see, and the guess was wrong:
+    /// 46pt was *smaller* than the panel's own inset, so she began the slide
+    /// already on screen and half visible. Moving by the inset plus her width
+    /// starts her genuinely hidden whatever the character size.
+    ///
+    /// - Parameters:
+    ///   - artInset: as `peekOrigin`.
+    ///   - artWidth: how wide her visible pixels are, at the current size.
     public static func peekEntryOrigin(
         corner: ScreenCorner,
         size: GSize,
         visibleFrame: GRect,
-        offset: Double,
+        artInset: Double = 0,
+        artWidth: Double,
         screenFrame: GRect? = nil
     ) -> GPoint {
-        let resting = peekOrigin(corner: corner, size: size,
-                                 visibleFrame: visibleFrame, screenFrame: screenFrame)
-        return GPoint(x: resting.x + (corner.isLeft ? -offset : offset), y: resting.y)
+        let resting = peekOrigin(corner: corner, size: size, visibleFrame: visibleFrame,
+                                 screenFrame: screenFrame, artInset: artInset)
+        let travel = max(0, artWidth)
+        return GPoint(x: resting.x + (corner.isLeft ? -travel : travel), y: resting.y)
     }
 
     /// How long a walk from `from` to `to` should take at `speed` points/second.

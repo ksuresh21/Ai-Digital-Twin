@@ -159,6 +159,9 @@ Honesty about coverage matters more than a high number:
 | Animation looks smooth | Perceptual, not assertable | Manual test 6 |
 | Behaviour over full-screen apps | Apple has changed this between releases | Manual test 10 — **needs verification** |
 | Sleep / wake greeting | Requires actually sleeping the Mac | Manual test 15 |
+| That `com.apple.screenIsLocked` really fires | Undocumented notification, and posting it from a test would broadcast to every app on the machine. The *handling* is fully unit-tested against injected notification centres | Manual tests 15b–15g |
+| Whether the screensaver reports itself at all on macOS 14+ | Version-dependent behaviour Apple changed | Manual test 15g — **needs verification** |
+| The coordinator's away/back wiring | `AppCoordinator` lives in an executable target with no test host | Manual tests 15b–15f |
 | Login item registration | Needs a signed, installed bundle | Manual test 17 |
 | Multiple displays | Needs a second display | Manual tests 12–14 |
 | **Anything on Windows** | **No Windows implementation exists** | Nothing. Untested. |

@@ -7,8 +7,8 @@ import AiTwinCore
 /// protocol, and nothing in this file imports AppKit. `AiTwinMac` supplies the
 /// macOS implementations; a future Windows port would supply its own and reuse
 /// `AiTwinCore` untouched. Keeping the seam this narrow is what makes that claim
-/// credible rather than aspirational -- there are five protocols, and the domain
-/// depends on nothing else.
+/// credible rather than aspirational -- the seam is a handful of protocols, and
+/// the domain depends on nothing else.
 ///
 /// Not tested on Windows. No Windows implementation exists.
 
@@ -67,9 +67,18 @@ public protocol IdleMonitoring: AnyObject {
     var idleSeconds: TimeInterval { get }
 }
 
-/// Tells the app when the Mac wakes or the user unlocks the screen.
-public protocol WakeObserving: AnyObject {
-    var onWake: (() -> Void)? { get set }
+/// Tells the app when the user leaves the Mac and when they come back.
+///
+/// One protocol rather than separate "lock" and "wake" observers on purpose: a
+/// lid close that also locks the screen produces four system notifications
+/// across two notification centres, and only something that can see all of them
+/// is able to turn that into exactly one leaving and one returning.
+public protocol PresenceObserving: AnyObject {
+    /// The screen locked, the screensaver started, or the machine slept.
+    var onAway: (() -> Void)? { get set }
+    /// The matching unlock or wake -- and only once *every* away signal has
+    /// cleared, so waking a still-locked Mac does not count as coming back.
+    var onBack: (() -> Void)? { get set }
     func start()
     func stop()
 }

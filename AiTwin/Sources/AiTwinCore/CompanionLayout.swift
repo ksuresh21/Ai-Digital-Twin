@@ -31,6 +31,43 @@ public enum CompanionLayout {
         )
     }
 
+    /// How wide the drawing itself is, once scaled to fill `frameHeight`.
+    ///
+    /// Smaller than the panel whenever the 240pt minimum width wins, which is
+    /// most of the time. The difference becomes an equal transparent gutter on
+    /// each side, because the image is centred.
+    public static func drawnWidth(frameHeight: Double, canvasAspectRatio: Double) -> Double {
+        max(0, frameHeight * canvasAspectRatio)
+    }
+
+    /// Distance from the panel's outer edge to the character's first visible
+    /// pixel, for a clip pinned to the canvas edge.
+    ///
+    /// This is what the peek placement has to cancel out. It is the centring
+    /// gutter plus whatever bearing the artwork itself leaves, and it changes
+    /// with the character size — which is why a fixed constant could never
+    /// have worked.
+    public static func edgeArtInset(
+        panelWidth: Double,
+        frameHeight: Double,
+        canvasAspectRatio: Double,
+        leadingFraction: Double
+    ) -> Double {
+        let drawn = drawnWidth(frameHeight: frameHeight, canvasAspectRatio: canvasAspectRatio)
+        let gutter = max(0, (panelWidth - drawn) / 2)
+        return gutter + drawn * max(0, leadingFraction)
+    }
+
+    /// How wide the character's visible pixels are at the current size.
+    public static func artWidth(
+        frameHeight: Double,
+        canvasAspectRatio: Double,
+        widthFraction: Double
+    ) -> Double {
+        drawnWidth(frameHeight: frameHeight, canvasAspectRatio: canvasAspectRatio)
+            * max(0, widthFraction)
+    }
+
     /// Gap between the character and her cloud.
     public static let cloudGap: Double = 8
 

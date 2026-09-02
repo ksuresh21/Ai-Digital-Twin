@@ -103,6 +103,17 @@ water to 30 seconds and eye break to 1 minute.
 - [ ] The digits do not shift left and right as the numbers change
 - [ ] "End" stops the session
 
+**7e. The peek comes from the screen edge, once**
+- [ ] Developer → Behaviours → peek, at each of the four corners
+- [ ] She appears **once** — no silent pop-in at the corner followed by a jump
+- [ ] Her message is there from the first frame she is visible
+- [ ] She slides in from the **literal edge** of the display, with her leading
+      edge flush against it — not floating 20–60pt inside
+- [ ] She starts the slide fully hidden; no part of her is on screen first
+- [ ] She withdraws the same way she arrived
+- [ ] Repeat with Settings → Character → size at both 128 and 200: the inset
+      scales with her, so both sizes must look right
+
 **7d. Top corners tuck her into the corner**
 - [ ] Settings → General → corner → **top-left**; trigger a reminder
 - [ ] Her head is close to the top of the screen, not floating well below it
@@ -169,17 +180,62 @@ water to 30 seconds and eye break to 1 minute.
 
 ## E. System events
 
-**15. Wake greeting**
+**15. Greeting on return**
 - [ ] Settings → General → "Say hello when the Mac wakes up" is on
 - [ ] Sleep the Mac (Apple menu → Sleep), wait 30s, wake it
-- [ ] The character walks in and greets you
+- [ ] The character greets you
 - [ ] Exactly **one** greeting, not two
 
-**16. Timers survive sleep**
-- [ ] Set eye break to 1 minute; note the menu bar countdown
+**15b. A real absence resets the countdown** — the headline behaviour
+- [ ] Test Mode on, eye break set to 1 minute
+- [ ] Wait ~40 seconds, so the countdown is well under way
+- [ ] Lock the screen (⌃⌘Q) and leave it for two minutes
+- [ ] Unlock. She greets you **once**
+- [ ] The menu bar countdown shows close to a **full minute**, not 20 seconds
+- [ ] Menu bar → status showed "Away — timers on hold" while locked
+
+> Time away from the Mac is not screen time. A reminder measures how long you
+> have been *at* the machine, so the clock restarts when you come back rather
+> than firing the moment you sit down.
+
+**15c. A quick lock changes nothing**
+- [ ] Note the countdown, lock the screen, unlock after ~20 seconds
+- [ ] **No** greeting
+- [ ] The countdown resumed where it was — it did not reset
+
+**15d. She never appears on the lock screen**
+- [ ] Settings → General → chatter frequency "occasional"
+- [ ] Lock the screen and watch the login window for three minutes
+- [ ] She never appears — no peek, no mood, no reminder
+
+**15e. A focus session does not survive a lock**
+- [ ] Start a focus session from the menu bar
+- [ ] Lock the screen, wait a minute, unlock
+- [ ] The session has **ended**, not paused — the menu bar offers to start one
+
+**15f. A reminder on screen when you lock**
+- [ ] Trigger a water reminder (Developer → Reminders)
+- [ ] Lock the screen while the bubble is still up
+- [ ] Unlock: no bubble, and she is not standing there
+- [ ] Settings → Progress shows it counted as **skipped**
+- [ ] The next water reminder is a full interval away, not immediate
+
+**15g. Does the screensaver actually report itself?**
+- [ ] Set the screensaver to start after 1 minute, with "require password" **off**
+- [ ] Leave the Mac until the screensaver starts, then move the mouse
+- [ ] Did the countdown reset? If **no**, `com.apple.screensaver.didstart` is not
+      firing on this macOS version — say so, and those two names should be
+      deleted from `MacPresenceObserver` rather than left looking functional
+
+**16. Sleep is treated as being away**
+- [ ] Set eye break to 1 minute; note the countdown
 - [ ] Sleep the Mac for 3 minutes, wake it
-- [ ] The reminder fires promptly — the countdown did not freeze for the sleep duration
-- [ ] Nothing fired repeatedly to "catch up"
+- [ ] Nothing fires immediately on wake, and nothing fires repeatedly to "catch up"
+- [ ] The countdown restarts from a full minute
+
+> This replaces the old "timers survive sleep" check. They deliberately no
+> longer do: a countdown that ran through two hours of sleep meant a reminder
+> ambushing you the instant you opened the lid.
 
 **17. Start at login**
 - [ ] Copy the app to `/Applications` first (`cp -R build/AiTwin.app /Applications/`)
@@ -203,6 +259,70 @@ water to 30 seconds and eye break to 1 minute.
 ---
 
 ## F. Settings and configuration
+
+**F-P1. Progress — Today**
+- [ ] Settings → Progress opens on **Today** by default, with a Today / Last 7 days picker
+- [ ] Water shows a volume against your goal (e.g. "1.5 L of 3 L") with a progress bar
+- [ ] Rows for eye breaks taken, stretches done, focus sessions, and skipped
+- [ ] Snoozed and missed counts appear under the relevant row when non-zero
+- [ ] "Through the day" draws a **line** once something is logged today
+- [ ] Before anything is logged it explains that hour-by-hour starts from today
+      onwards and cannot show past days
+- [ ] The streak line says **what a streak is** — days in a row hitting your
+      water goal — rather than a bare number
+
+**F-P2. Progress — Last 7 days**
+- [ ] Switching to Last 7 days shows **four separate bar charts**: water, eye
+      breaks, stretches, focus minutes
+- [ ] Water bars turn green on days the goal was met
+- [ ] Each chart has a 7-day total and a best day underneath
+- [ ] Days with nothing show a faint stub, not a gap
+
+**F-P3. Export and the monthly clear-out**
+- [ ] Export as CSV writes **two** files when detail exists: the totals, and a
+      `.detail.csv` with clock times
+- [ ] A line under the button says what was saved
+- [ ] Open the detail file: one row per event, with the time it happened
+- [ ] The clear-out banner only appears when detail from a previous month exists
+- [ ] "Clear Old Detail…" asks for confirmation before doing anything
+- [ ] After clearing, the daily totals and the streak are **unchanged**
+- [ ] Nothing is ever deleted without you confirming — leave the app for a
+      month and last month's detail is still offered, not gone
+
+**F-P4. Quitting**
+- [ ] Menu bar → Quit AiTwin asks "Quit AiTwin?" first
+- [ ] Cancel leaves the app running, still in the menu bar
+- [ ] ⌘Q with Settings open asks the same question
+- [ ] Cancelling from ⌘Q does **not** leave a stray Dock icon behind
+- [ ] Confirming quits, and the menu bar icon disappears
+
+**F-P5. Runs in the background**
+- [ ] Settings → General → "Start AiTwin at login" is on
+- [ ] Restart the Mac, log in, do nothing: the menu bar icon appears on its own
+- [ ] Reminders resume without opening anything
+
+**F0. Installing a character pack** — this shipped entirely disconnected once
+- [ ] Settings → Character → "Add your own character" shows a **dashed drop zone**
+- [ ] It has a **"Choose a File…"** link under it
+- [ ] Dragging a character `.zip` onto the zone highlights it, then installs
+- [ ] "Choose a File…" opens a file picker that accepts a `.zip` **or** a folder
+- [ ] After installing, the character switches immediately and the status line
+      names the frame and animation counts
+- [ ] A pack missing some clips still installs and says which fall back to Idle
+
+**F0b. Settings stays put** — it used to drop behind other apps
+- [ ] Open Settings, then click another app (Finder, a browser)
+- [ ] The Settings window is **still there** when you switch back — not gone
+- [ ] While it is open, AiTwin has a Dock icon and a ⌘-Tab entry
+- [ ] Close Settings: the Dock icon **disappears** again
+- [ ] Reopen it and the Dock icon comes back
+
+**F0c. The menu bar is not empty**
+- [ ] With Settings open, the menu bar shows **AiTwin, Edit and Window** menus,
+      not just the status icon
+- [ ] ⌘C, ⌘V, ⌘A and ⌘Z all work in the "Your name" field
+- [ ] ⌘, opens Settings; ⌘W closes it; ⌘Q quits
+- [ ] With Settings closed, the app has no menu bar of its own again
 
 **20. Every corner works**
 - [ ] For each of bottom-left, bottom-right, top-left, top-right: set it, trigger a reminder

@@ -36,11 +36,28 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             self.window = window
         }
 
-        // An accessory app is never "active", so the Settings window would open
-        // behind whatever you were using. Activating here is the one moment
-        // AiTwin deliberately takes focus -- you asked for a window, so you get
-        // it in front.
+        // Become a normal app for as long as this window is open.
+        //
+        // As an accessory, AiTwin cannot hold activation: clicking any other app
+        // dropped Settings behind it with no Dock icon and no ⌘-Tab entry to get
+        // back, so the window looked like it had vanished. It also made
+        // NSOpenPanel unreliable, because a modal file picker belongs to an app
+        // that can actually be active.
+        //
+        // `.regular` puts a Dock icon and a real menu bar back for the duration.
+        // `windowWillClose` returns us to `.accessory`, so the companion goes
+        // back to being invisible the moment Settings is dismissed.
+        NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
+    }
+
+    /// True while Settings is on screen, so the delegate knows whether a file
+    /// picker can be presented.
+    var isOpen: Bool { window?.isVisible == true }
+
+    func windowWillClose(_ notification: Notification) {
+        // Straight back to a menu-bar-only app: no Dock icon, no ⌘-Tab entry.
+        NSApp.setActivationPolicy(.accessory)
     }
 }

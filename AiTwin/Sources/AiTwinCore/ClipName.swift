@@ -32,14 +32,26 @@ public enum ClipName {
 
     /// Clips whose absence is worth reporting in Settings.
     ///
-    /// `focus` and `stretch` are registered in `ClipDefinition.standard` so a
-    /// pack containing them loads them, but they are left out here: the
-    /// features that use them are not built yet, and nagging about art for a
-    /// feature that does not exist is just noise.
-    public static let all: [String] = [idle, walk, wave, waterReminder, eyeBreak, sleep, happy]
+    /// The rule is simply "can the app actually show it?". Nagging about art
+    /// for a pose that can never appear is noise, and staying quiet about art
+    /// the app genuinely needs is worse -- the clip silently falls back to idle
+    /// and the behaviour just looks broken.
+    ///
+    /// `sleep` is deliberately absent. She no longer settles into the sleeping
+    /// pose: winding down is two yawns and then she leaves, so the sleep frames
+    /// are never drawn. `yawn` is here for exactly that reason -- it is now the
+    /// whole of the late-night behaviour rather than a lead-in to it.
+    ///
+    /// `sitting` is absent too: nothing summons it since the stretch routine
+    /// stopped sitting her down first.
+    public static let all: [String] = [
+        idle, walk, wave, waterReminder, eyeBreak, happy,
+        focus, stretch, concerned, cheer, peek, yawn,
+    ]
 
-    /// Everything the loader knows how to read, including not-yet-used clips.
-    public static let loadable: [String] = all + [focus, stretch, concerned, cheer, peek, yawn, sitting]
+    /// Everything the loader knows how to read, including poses nothing
+    /// currently summons. A pack may still ship them and they will load.
+    public static let loadable: [String] = all + [sleep, sitting]
 
 }
 

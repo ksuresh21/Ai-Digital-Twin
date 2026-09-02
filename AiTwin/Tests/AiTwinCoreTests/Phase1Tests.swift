@@ -141,13 +141,18 @@ struct ActivityLogTests {
         #expect(week.first?.dayStart == day(-6))
     }
 
-    @Test("history older than the retention window is dropped")
-    func prunesOldHistory() {
+    @Test("daily summaries are kept indefinitely")
+    func keepsDailySummariesForever() {
+        // These used to be pruned at ninety days. They are not any more: a
+        // day's summary is a couple of hundred bytes, so twenty years is about
+        // 1.5 MB, and dropping them capped the best streak at the length of
+        // the retention window. Only the timestamped detail is ever cleared.
         var log = ActivityLog()
         log.apply(.glassLogged(goal: 8), at: day(-200), calendar: calendar)
         log.apply(.glassLogged(goal: 8), at: day(0), calendar: calendar)
-        #expect(log.days.count == 1)
-        #expect(log.days.first?.dayStart == day(0))
+        #expect(log.days.count == 2)
+        #expect(log.days.first?.dayStart == day(-200))
+        #expect(log.days.last?.dayStart == day(0))
     }
 
     @Test("only days with activity are stored")
@@ -527,7 +532,9 @@ struct FocusSuppressionTests {
 
     @Test("every hold reason explains itself in the menu bar")
     func holdReasonsHaveText() {
-        for reason in [EngineHoldReason.paused, .quietHours, .userIdle, .focusing] {
+        // allCases, not a hand-written list: the hand-written one silently
+        // skipped `.away` the day it was added.
+        for reason in EngineHoldReason.allCases {
             #expect(!reason.displayName.isEmpty)
         }
     }
@@ -536,15 +543,52 @@ struct FocusSuppressionTests {
 @Suite("New character states")
 struct NewStateTests {
 
-    @Test("chatter peeks in rather than walking on")
+    @Test("chatter lands in one state, with no separate arrival")
     func chatterPeeks() {
-        #expect(SummonPurpose.chatter.entrance == .pop)
+        #expect(SummonPurpose.chatter.entrance == .slide)
         let machine = CharacterStateMachine()
         machine.handle(.summon(.chatter))
-        machine.handle(.arrivedAtCorner)
+        // Straight to .chattering. Routing through .appearing first meant a
+        // silent pop-in at the corner, then 0.9s later the window jumping to
+        // the screen edge as the message arrived -- one summon that looked
+        // like two separate visits.
         #expect(machine.state == .chattering)
         #expect(machine.state.clipName == ClipName.peek)
         #expect(machine.state.isWalking == false)
+    }
+
+    @Test("previewing the peek slides in like the real thing")
+    func peekPreviewSlides() {
+        // The Developer tab is where this behaviour gets checked, so a preview
+        // that popped at the resting corner and walked off was showing a
+        // placement and an exit the feature does not have.
+        #expect(SummonPurpose.preview(ClipName.peek).entrance == .slide)
+        #expect(SummonPurpose.previewSequence(ClipSequence.peekRoutine.name).entrance == .slide)
+
+        let machine = CharacterStateMachine()
+        machine.handle(.summon(.preview(ClipName.peek)))
+        #expect(machine.state == .previewing(clip: ClipName.peek))
+    }
+
+    @Test("previewing anything else still pops at the corner")
+    func otherPreviewsPop() {
+        #expect(SummonPurpose.preview(ClipName.cheer).entrance == .pop)
+        #expect(SummonPurpose.preview(ClipName.idle).entrance == .pop)
+        #expect(SummonPurpose.previewSequence(ClipSequence.greetingRoutine.name).entrance == .pop)
+
+        let machine = CharacterStateMachine()
+        machine.handle(.summon(.preview(ClipName.cheer)))
+        #expect(machine.state == .appearing(.preview(ClipName.cheer)))
+    }
+
+    @Test("a chatter interrupted mid-visit still re-enters cleanly")
+    func chatterFromLeaving() {
+        let machine = CharacterStateMachine()
+        machine.handle(.summon(.chatter))
+        machine.handle(.restTimeout)
+        #expect(machine.state == .leaving)
+        machine.handle(.summon(.chatter))
+        #expect(machine.state == .chattering)
     }
 
     @Test("chatter goes away on its own")
@@ -617,6 +661,14 @@ struct NewStateTests {
     func loadableIsNotAll() {
         // Nagging about art for a feature that does not exist yet is noise.
         #expect(ClipName.all.contains(ClipName.sitting) == false)
+        // Settings only reports art the app can actually draw. Sleep left the
+        // list when winding down became two yawns and a walk-off; yawn joined
+        // it, because it is now the whole late-night behaviour.
+        #expect(ClipName.all.contains(ClipName.sleep) == false)
+        #expect(ClipName.all.contains(ClipName.yawn))
+        // Both are still readable, so a pack shipping them is not rejected.
+        #expect(ClipName.loadable.contains(ClipName.sleep))
+        #expect(ClipName.loadable.contains(ClipName.sitting))
         #expect(ClipName.loadable.contains(ClipName.sitting))
     }
 }
@@ -625,57 +677,101 @@ struct NewStateTests {
 struct PeekPlacementTests {
 
     private let visible = GRect(x: 0, y: 70, width: 1440, height: 805)
-    private let size = GSize(width: 466, height: 604)
 
-    @Test("a peek sits flush against the screen edge, not at the resting corner")
-    func flushToEdge() {
-        // The peeking artwork is drawn hugging a vertical border, so it only
-        // reads correctly when that border is the edge of the display.
+    // The real panel, not the canvas. The earlier version of this suite passed
+    // the pack's 466pt canvas width as the window size, which quietly assumed
+    // the artwork was exactly as wide as its window -- and that assumption was
+    // the bug. With a 200pt character the app's panel is 240pt wide (the
+    // minimum, so a bubble is not squeezed into a column) around a 198pt
+    // drawing, leaving a 21pt gutter she used to sit behind.
+    private let size = GSize(width: 240, height: 467)
+    private let inset = 21.7
+    private let artWidth = 53.0
+
+    @Test("her first visible pixel lands on the screen edge, not the panel's")
+    func firstPixelIsFlush() {
         let peek = CharacterPlacement.peekOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible, artInset: inset
+        )
+        #expect(abs((peek.x + inset) - visible.minX) < 0.01)
+        // Without the inset she hung 21pt inside the edge -- hovering, not peeking.
+        let unfixed = CharacterPlacement.peekOrigin(
             corner: .bottomLeft, size: size, visibleFrame: visible
         )
-        #expect(peek.x == visible.minX)
-
-        let resting = CharacterPlacement.restingOrigin(
-            corner: .bottomLeft, size: size, visibleFrame: visible, margin: 24
-        )
-        #expect(peek.x < resting.x)
+        #expect(unfixed.x + inset > visible.minX)
     }
 
-    @Test("a right-hand corner peeks from the right edge")
-    func rightEdge() {
+    @Test("the same holds at the right-hand edge")
+    func firstPixelIsFlushOnTheRight() {
         let peek = CharacterPlacement.peekOrigin(
-            corner: .bottomRight, size: size, visibleFrame: visible
+            corner: .bottomRight, size: size, visibleFrame: visible, artInset: inset
         )
-        #expect(peek.x + size.width == visible.maxX)
+        // Mirrored, so her leading pixel is measured from the panel's right.
+        #expect(abs((peek.x + size.width - inset) - visible.maxX) < 0.01)
     }
 
-    @Test("the peek slides in from just off screen, not across the desktop")
-    func shortSlide() {
+    @Test("the inset scales with the character, so no constant could fix it")
+    func insetDependsOnSize() {
+        // 128pt character: a 203pt frame inside the same 240pt minimum panel.
+        let small = CompanionLayout.edgeArtInset(
+            panelWidth: 240, frameHeight: 203, canvasAspectRatio: 466.0 / 744, leadingFraction: 2.0 / 466
+        )
+        // 200pt character: a 317pt frame, so a much narrower gutter.
+        let large = CompanionLayout.edgeArtInset(
+            panelWidth: 240, frameHeight: 317, canvasAspectRatio: 466.0 / 744, leadingFraction: 2.0 / 466
+        )
+        #expect(small > 50)
+        #expect(large < 25)
+        #expect(small > large)
+    }
+
+    @Test("she starts the slide entirely off screen")
+    func entryIsFullyHidden() {
+        let entry = CharacterPlacement.peekEntryOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible,
+            artInset: inset, artWidth: artWidth
+        )
+        // Her trailing pixel is at entry.x + inset + artWidth; all of it must be
+        // past the edge. The old fixed 46pt slide left 54% of her showing.
+        #expect(entry.x + inset + artWidth <= visible.minX + 0.01)
+    }
+
+    @Test("a peek from the right slides out to the right")
+    func slideDirectionMirrors() {
         let resting = CharacterPlacement.peekOrigin(
-            corner: .bottomLeft, size: size, visibleFrame: visible
+            corner: .topRight, size: size, visibleFrame: visible, artInset: inset
         )
         let entry = CharacterPlacement.peekEntryOrigin(
-            corner: .bottomLeft, size: size, visibleFrame: visible, offset: 46
+            corner: .topRight, size: size, visibleFrame: visible,
+            artInset: inset, artWidth: artWidth, screenFrame: nil
         )
-        #expect(entry.x == resting.x - 46)
+        #expect(entry.x == resting.x + artWidth)
+    }
+
+    @Test("a peek is still a short lean, not a walk across the desktop")
+    func shortSlide() {
+        let resting = CharacterPlacement.peekOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible, artInset: inset
+        )
+        let entry = CharacterPlacement.peekEntryOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible,
+            artInset: inset, artWidth: artWidth
+        )
         #expect(entry.y == resting.y)
-        // A walk-in starts a whole panel width away; a peek is a short lean.
         let walkEntry = CharacterPlacement.entryOrigin(
             corner: .bottomLeft, size: size, visibleFrame: visible, margin: 24
         )
         #expect(abs(entry.x - resting.x) < abs(walkEntry.x - resting.x))
     }
 
-    @Test("a peek from the right slides out to the right")
-    func slideDirectionMirrors() {
-        let resting = CharacterPlacement.peekOrigin(
-            corner: .topRight, size: size, visibleFrame: visible
+    @Test("an unmeasurable pack falls back to aligning the panel")
+    func withoutMeasurementsNothingMoves() {
+        // A pack whose art could not be read gets no inset, which is the old
+        // behaviour -- imperfect, but never worse than it was.
+        let peek = CharacterPlacement.peekOrigin(
+            corner: .bottomLeft, size: size, visibleFrame: visible, artInset: 0
         )
-        let entry = CharacterPlacement.peekEntryOrigin(
-            corner: .topRight, size: size, visibleFrame: visible, offset: 46
-        )
-        #expect(entry.x == resting.x + 46)
+        #expect(peek.x == visible.minX)
     }
 
     @Test("a peek is bounded — she does not linger")
@@ -708,8 +804,10 @@ struct EntranceChoiceTests {
 
         #expect(SummonPurpose.greeting.entrance == .pop)
         #expect(SummonPurpose.celebration.entrance == .pop)
-        #expect(SummonPurpose.chatter.entrance == .pop)
         #expect(SummonPurpose.focus.entrance == .pop)
+        // Chatter is the one that neither walks nor pops: she leans in from
+        // off the edge, already talking.
+        #expect(SummonPurpose.chatter.entrance == .slide)
         #expect(SummonPurpose.preview(ClipName.yawn).entrance == .pop)
     }
 
@@ -1164,27 +1262,34 @@ struct ClipSequenceTests {
         #expect(routine.clips.contains(ClipName.sitting) == false)
     }
 
-    @Test("finishing a focus session gets her out of the chair before cheering")
+    @Test("finishing a focus session goes straight from the chair to the cheer")
     func focusFinishGetsUp() {
         let routine = ClipSequence.focusFinishedRoutine
-        #expect(routine.clips.first == ClipName.focus)
-        #expect(routine.clips.last == ClipName.cheer)
-        // Standing up in between, so she does not cheer while seated.
-        #expect(routine.clips.contains(ClipName.idle))
+        #expect(routine.clips == [ClipName.focus, ClipName.cheer])
+        // The idle beat in between is deliberately gone: a pause between
+        // looking up and celebrating read as hesitation, not as standing up.
+        #expect(routine.clips.contains(ClipName.idle) == false)
     }
 
-    @Test("sleep yawns first and then stays put")
-    func sleepRoutineHolds() {
+    @Test("winding down is two yawns and then she leaves")
+    func sleepRoutineYawnsTwice() {
         let routine = ClipSequence.sleepRoutine
-        #expect(routine.clips.first == ClipName.yawn)
-        #expect(routine.clips.last == ClipName.sleep)
-        #expect(routine.steps.last?.holdsIndefinitely == true)
+        #expect(routine.clips == [ClipName.yawn, ClipName.yawn])
+        // Nothing holds any more. She used to settle into the sleep pose and
+        // stay parked on the desktop until something woke her, which stopped
+        // reading as a nudge to stop working and started reading as clutter.
+        #expect(routine.steps.allSatisfy { $0.holdsIndefinitely == false })
+        #expect(routine.clips.contains(ClipName.sleep) == false)
+        #expect(routine.duration > 0)
     }
 
-    @Test("a milestone is a bigger celebration than a glass of water")
+    @Test("a milestone is the cheer alone")
     func milestoneIsBigger() {
+        #expect(ClipSequence.milestoneRoutine.clips == [ClipName.cheer])
         #expect(ClipSequence.milestoneRoutine.duration > ClipSequence.waterLoggedRoutine.duration)
-        #expect(ClipSequence.milestoneRoutine.clips.contains(ClipName.cheer))
+        // No happy beat first: the everyday jump before the big one made the
+        // milestone read as two celebrations bolted together.
+        #expect(ClipSequence.milestoneRoutine.clips.contains(ClipName.happy) == false)
         #expect(ClipSequence.waterLoggedRoutine.clips == [ClipName.happy])
     }
 

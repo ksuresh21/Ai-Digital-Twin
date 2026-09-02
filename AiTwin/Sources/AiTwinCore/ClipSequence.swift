@@ -59,17 +59,20 @@ public struct ClipSequence: Equatable, Sendable {
         ClipStep(ClipName.idle, duration: 0.9),
     ])
 
-    /// A yawn that settles into sleep. The last beat holds: she stays asleep on
-    /// the desktop until something wakes her.
+    /// Winding down: two yawns, and then she goes.
+    ///
+    /// She used to settle into the sleep pose and stay there until something
+    /// woke her. A character asleep on the desktop is just a sprite parked on
+    /// your wallpaper -- it stops reading as a nudge to stop working and starts
+    /// reading as clutter. Two yawns say the same thing and then leave you to it.
     public static let sleepRoutine = ClipSequence(name: "sleep", steps: [
         ClipStep(ClipName.yawn, duration: 2.6),
-        ClipStep(ClipName.sleep, holdsIndefinitely: true),
+        ClipStep(ClipName.yawn, duration: 2.6),
     ])
 
     /// Ending a focus session: she looks up from the book, stands, and cheers.
     public static let focusFinishedRoutine = ClipSequence(name: "focusFinished", steps: [
         ClipStep(ClipName.focus, duration: 0.7),
-        ClipStep(ClipName.idle, duration: 0.8),
         ClipStep(ClipName.cheer, duration: 2.6),
     ])
 
@@ -82,7 +85,6 @@ public struct ClipSequence: Equatable, Sendable {
     /// jump says it, and a cloud over a jumping character has to sit so high
     /// that it reads as detached from her.
     public static let milestoneRoutine = ClipSequence(name: "milestone", steps: [
-        ClipStep(ClipName.happy, duration: 0.7),
         ClipStep(ClipName.cheer, duration: 3.0),
     ])
 

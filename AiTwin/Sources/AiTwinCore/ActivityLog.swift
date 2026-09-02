@@ -75,13 +75,34 @@ public enum ActivityEvent: Equatable, Sendable {
 public struct ActivityLog: Codable, Equatable, Sendable {
     /// Oldest first. Only days with something recorded are stored, so an app
     /// left closed for a week does not accumulate empty rows.
+    ///
+    /// **Kept indefinitely.** A day's summary costs a couple of hundred bytes,
+    /// so twenty years is about 1.5 MB -- less than two frames of character
+    /// art. Deleting them would buy nothing and would cap the best streak at
+    /// however long the retention window happened to be.
     public private(set) var days: [DailyRecord]
-    /// How much history to keep. Ninety days is enough for any view we plan and
-    /// still a trivial amount of JSON.
-    public static let retentionDays = 90
 
-    public init(days: [DailyRecord] = []) {
+    /// Individual events with the time they happened, oldest first.
+    ///
+    /// This is what the by-hour view of today is drawn from; the daily records
+    /// above only count things, they do not remember when. Far bulkier per day
+    /// than a summary, which is why this is the part the monthly clear-out
+    /// removes -- see `DataRetention`.
+    public private(set) var events: [TimedEvent]
+
+    public init(days: [DailyRecord] = [], events: [TimedEvent] = []) {
         self.days = days
+        self.events = events
+    }
+
+    // Older stored logs have no `events` key, so decode it as empty rather than
+    // failing and throwing away someone's whole history.
+    private enum CodingKeys: String, CodingKey { case days, events }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        days = try container.decodeIfPresent([DailyRecord].self, forKey: .days) ?? []
+        events = try container.decodeIfPresent([TimedEvent].self, forKey: .events) ?? []
     }
 
     public func record(on date: Date, calendar: Calendar = .current) -> DailyRecord? {
@@ -124,13 +145,24 @@ public struct ActivityLog: Codable, Equatable, Sendable {
         days.removeAll { $0.dayStart == start }
         days.append(record)
         days.sort { $0.dayStart < $1.dayStart }
-        prune(before: date, calendar: calendar)
+
+        if let timed = TimedEvent(event, at: date) {
+            events.append(timed)
+            events.sort { $0.at < $1.at }
+        }
     }
 
-    private mutating func prune(before date: Date, calendar: Calendar = .current) {
-        guard let cutoff = calendar.date(byAdding: .day, value: -Self.retentionDays,
-                                         to: calendar.startOfDay(for: date)) else { return }
-        days.removeAll { $0.dayStart < cutoff }
+    /// Drops timestamped events from before `cutoff`, keeping every daily
+    /// summary. Only ever called after the user has explicitly agreed.
+    public mutating func clearEvents(before cutoff: Date) {
+        events.removeAll { $0.at < cutoff }
+    }
+
+    /// The events recorded on one day, in order.
+    public func events(on date: Date, calendar: Calendar = .current) -> [TimedEvent] {
+        let start = calendar.startOfDay(for: date)
+        guard let end = calendar.date(byAdding: .day, value: 1, to: start) else { return [] }
+        return events.filter { $0.at >= start && $0.at < end }
     }
 
     /// The last `count` days ending today, including days with no activity, so a
@@ -203,6 +235,28 @@ public struct ActivityLog: Codable, Equatable, Sendable {
     ///
     /// Volumes are written in millilitres so the numbers are absolute — glasses
     /// would be meaningless once the glass size changes.
+    /// The timestamped detail as CSV: one row per event, with the clock time.
+    ///
+    /// This is the half the monthly clear-out removes, so it is the half an
+    /// export has to be able to preserve. Exporting only the daily totals --
+    /// which are never deleted -- would have made "export before clearing"
+    /// meaningless.
+    public func eventsCSV(calendar: Calendar = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        var lines = ["Date and time,Activity,What happened,Minutes"]
+        for event in events {
+            let activity = event.kind.activity.displayName
+            let what = event.kind.rawValue
+            let minutes = event.minutes > 0 ? String(Int(event.minutes)) : ""
+            lines.append("\(formatter.string(from: event.at)),\(activity),\(what),\(minutes)")
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
     public func csv(intake: WaterIntake, calendar: Calendar = .current) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"

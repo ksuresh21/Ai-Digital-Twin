@@ -27,7 +27,19 @@ public enum SummonPurpose: Equatable, Sendable {
     /// over to tell you something.
     public var entrance: Entrance {
         switch self {
-        case .greeting, .celebration, .preview, .previewSequence, .chatter, .focus: return .pop
+        case .greeting, .celebration, .focus: return .pop
+        // A preview of the peek slides in from the edge like the real thing,
+        // rather than popping at the resting corner -- otherwise the Developer
+        // tab shows a placement and an exit the feature does not have.
+        case .preview(let clip):
+            return clip == ClipName.peek ? .slide : .pop
+        case .previewSequence(let name):
+            return name == ClipSequence.peekRoutine.name ? .slide : .pop
+        // Chatter is neither: she leans in from off the edge, already talking.
+        // Popping first meant a silent appearance at the corner followed 0.9s
+        // later by the window jumping to the edge and the message arriving --
+        // one summon that read as two visits.
+        case .chatter:                                            return .slide
         case .reminder:                                           return .walk
         // Concern is an errand -- she comes over to say it, the same as a
         // reminder. Sleepiness is not; she just appears, tired.
@@ -42,6 +54,9 @@ public enum Entrance: Equatable, Sendable {
     case pop
     /// Walks in from the nearest screen edge.
     case walk
+    /// Slides straight into the destination state from just off the edge, with
+    /// no separate arrival step. The destination positions and animates itself.
+    case slide
 }
 
 /// What the character is doing right now.
@@ -166,6 +181,34 @@ public final class CharacterStateMachine {
         return next
     }
 
+    /// Where a summon lands from off screen.
+    ///
+    /// A `.slide` purpose skips the arrival step entirely and goes straight to
+    /// its destination, because the destination state does its own positioning
+    /// and animation. Routing it through `.appearing` produced a silent
+    /// pop-in at the resting corner followed by a jump to the real position.
+    private static func arrival(for purpose: SummonPurpose) -> CharacterState {
+        switch purpose.entrance {
+        case .pop:   return .appearing(purpose)
+        case .walk:  return .entering(purpose)
+        case .slide: return destination(for: purpose)
+        }
+    }
+
+    /// What a purpose becomes once she is in place.
+    private static func destination(for purpose: SummonPurpose) -> CharacterState {
+        switch purpose {
+        case .greeting:          return .greeting
+        case .celebration:       return .celebrating
+        case .preview(let clip): return .previewing(clip: clip)
+        case .previewSequence(let name): return .previewingSequence(name: name)
+        case .chatter:           return .chattering
+        case .focus:             return .focusing
+        case .mood(let mood):    return .feeling(mood)
+        case .reminder(let k):   return .reminding(k)
+        }
+    }
+
     /// The transition table. Pure and static so it can be tested exhaustively
     /// without constructing a machine.
     public static func nextState(from state: CharacterState, on event: CharacterEvent) -> CharacterState {
@@ -174,7 +217,7 @@ public final class CharacterStateMachine {
             return .hidden
 
         case (.hidden, .summon(let purpose)):
-            return purpose.entrance == .pop ? .appearing(purpose) : .entering(purpose)
+            return arrival(for: purpose)
 
         // Already on screen: switch straight to the new purpose instead of
         // walking off and back on, which would look like a glitch.
@@ -218,20 +261,11 @@ public final class CharacterStateMachine {
             return .previewingSequence(name: name)
 
         case (.leaving, .summon(let purpose)):
-            return purpose.entrance == .pop ? .appearing(purpose) : .entering(purpose)
+            return arrival(for: purpose)
 
         case (.entering(let purpose), .arrivedAtCorner),
              (.appearing(let purpose), .arrivedAtCorner):
-            switch purpose {
-            case .greeting:          return .greeting
-            case .celebration:       return .celebrating
-            case .preview(let clip): return .previewing(clip: clip)
-            case .previewSequence(let name): return .previewingSequence(name: name)
-            case .chatter:           return .chattering
-            case .focus:             return .focusing
-            case .mood(let mood):    return .feeling(mood)
-            case .reminder(let k):   return .reminding(k)
-            }
+            return destination(for: purpose)
 
         case (.greeting, .animationFinished),
              (.celebrating, .animationFinished):

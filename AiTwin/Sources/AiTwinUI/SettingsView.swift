@@ -142,7 +142,9 @@ public struct SettingsView: View {
                     streak: model.currentStreak,
                     best: model.bestStreak,
                     intake: model.settings.water,
-                    onExport: { model.onExportHistory?() }
+                    exportStatus: model.exportStatus,
+                    onExport: { model.onExportHistory?() },
+                    onClearOldDetail: { cutoff in model.onClearOldDetail?(cutoff) }
                 )
             }
         }
@@ -311,10 +313,20 @@ struct CharacterSettingsTab: View {
                 }
             }
 
-            Section("Your own character") {
-                Text("Drop a folder of pixel-art frames into the Characters folder, then reload.")
+            Section("Add your own character") {
+                CharacterDropZone(
+                    isTargeted: $model.isDropTargeted,
+                    status: model.importStatus,
+                    onDrop: { url in model.onImportPack?(url) },
+                    onBrowse: { model.onBrowseForPack?() }
+                )
+
+                Text("A pack is a folder of animation folders — Idle, Walking, Waving and so "
+                     + "on — or a .zip of one. Frames are resized and aligned for you, so art "
+                     + "drawn at any size works.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
                 HStack {
                     Button("Open Characters Folder…") { model.onRevealPacksFolder?() }
                     Button("Reload Characters") { model.onReloadPacks?() }

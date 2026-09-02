@@ -105,7 +105,9 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
         let pack = CharacterPack(
             name: name,
             clips: clips,
-            characterHeightFraction: Self.characterHeightFraction(in: directory)
+            characterHeightFraction: Self.characterHeightFraction(in: directory),
+            canvasAspectRatio: Self.canvasAspectRatio(in: directory),
+            peekBounds: Self.peekBounds(of: clips[ClipName.peek])
         )
         if !pack.missingClipNames.isEmpty {
             NSLog("[AiTwin] Pack '\(name)' is missing clips: \(pack.missingClipNames.joined(separator: ", ")). They will fall back to idle.")
@@ -123,9 +125,43 @@ public final class MacCharacterPackLoader: CharacterPackLoading {
         return manifest.characterHeight / manifest.canvasHeight
     }
 
+    /// Frame width over frame height, from the manifest.
+    ///
+    /// Falls back to the generic character aspect ratio for a pack with no
+    /// manifest, which is the same guess the panel size already makes.
+    private static func canvasAspectRatio(in directory: URL) -> Double {
+        guard let manifest = readManifest(in: directory),
+              let width = manifest.canvasWidth,
+              manifest.canvasHeight > 0, width > 0
+        else { return CompanionLayout.characterAspectRatio }
+        return width / manifest.canvasHeight
+    }
+
+    /// Measures where the peeking pose actually sits inside its canvas.
+    ///
+    /// Done here, once per pack load, because `pack.json` describes vertical
+    /// layout only and the peek is the one clip whose *horizontal* position
+    /// matters: it is pinned to the canvas edge so that it can be pinned to the
+    /// screen edge, and the app has to know how much transparent canvas sits
+    /// outside her to cancel it out.
+    private static func peekBounds(of clip: AnimationClip?) -> CharacterPack.ClipBounds? {
+        guard let path = clip?.framePaths.first,
+              let image = NSImage(contentsOfFile: path),
+              let bitmap = PackInstaller.bitmap(from: image),
+              let bounds = PackInstaller.measure(bitmap),
+              bounds.width > 0, !bounds.isEmpty
+        else { return nil }
+        let canvasWidth = Double(bounds.width)
+        return CharacterPack.ClipBounds(
+            leadingFraction: Double(bounds.left) / canvasWidth,
+            widthFraction: Double(bounds.contentWidth) / canvasWidth
+        )
+    }
+
     struct PackManifest: Decodable {
         let characterHeight: Double
         let canvasHeight: Double
+        let canvasWidth: Double?
         let clipTopFractions: [String: Double]?
     }
 

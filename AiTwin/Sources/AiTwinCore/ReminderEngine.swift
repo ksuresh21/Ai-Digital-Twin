@@ -10,12 +10,23 @@ public enum ReminderEvent: Equatable, Sendable {
     /// Nobody responded within `reminderTimeout`; treated as a snooze so the
     /// character does not stand there indefinitely on an unattended Mac.
     case reminderTimedOut(ReminderKind)
+    /// The screen locked while this reminder was on screen, so it was taken
+    /// down rather than left standing against a display nobody can see.
+    case reminderWithdrawn(ReminderKind)
     case waterLogged(glasses: Int, goal: Int, goalJustReached: Bool)
 }
 
 /// Why the engine is currently not counting down. Surfaced in the menu bar so
 /// "why has it gone quiet?" always has a visible answer.
-public enum EngineHoldReason: String, Equatable, Sendable {
+public enum EngineHoldReason: String, Equatable, Sendable, CaseIterable {
+    /// The screen is locked, or the Mac is asleep.
+    ///
+    /// Listed first because it outranks everything else, and because it is the
+    /// only reason that states a fact about the world rather than a preference.
+    /// It is deliberately *not* folded into `userIdle`: that one is gated on
+    /// `settings.pauseWhenIdle`, which the user can switch off, whereas a
+    /// locked screen must never accumulate screen time whatever the settings say.
+    case away
     case paused
     case quietHours
     case userIdle
@@ -24,6 +35,7 @@ public enum EngineHoldReason: String, Equatable, Sendable {
 
     public var displayName: String {
         switch self {
+        case .away:       return "Away — timers on hold"
         case .paused:     return "Paused"
         case .quietHours: return "Quiet hours — staying quiet"
         case .userIdle:   return "You're away — timers on hold"
@@ -48,6 +60,9 @@ public final class ReminderEngine {
     public private(set) var holdReason: EngineHoldReason?
     /// Set by the app while a focus session is working. Suppresses everything.
     public var isFocusing: Bool = false
+    /// True between `beginAway()` and `endAway(resetCycles:)` — the screen is
+    /// locked, or the Mac is asleep.
+    public private(set) var isAway = false
     /// Written to on every acknowledged, snoozed or ignored reminder.
     public private(set) var activityLog: ActivityLog
 
@@ -106,9 +121,63 @@ public final class ReminderEngine {
 
     public func stop() {
         isStarted = false
+        isAway = false
         timers.values.forEach { $0.stop() }
         activeReminder = nil
         activeSince = nil
+    }
+
+    // MARK: Away
+
+    /// The screen locked, the Mac slept, or the screensaver started.
+    ///
+    /// Everything stops: no countdown advances while the user is not there, and
+    /// anything already on screen is withdrawn rather than left to time out
+    /// against a display nobody can see.
+    ///
+    /// Idempotent, because a single lid close fires several system
+    /// notifications and they must add up to one effect.
+    public func beginAway() {
+        guard !isAway else { return }
+        isAway = true
+        let now = clock.now
+        if let active = activeReminder { withdraw(active, at: now) }
+        applyHold(at: now, idleSeconds: 0)
+    }
+
+    /// The user unlocked, or the Mac woke.
+    ///
+    /// - Parameter resetCycles: start every enabled reminder's cycle from
+    ///   scratch. True for a real absence — time spent away from the Mac is not
+    ///   screen time, so a twenty-minute water cycle that was fifteen minutes in
+    ///   when the screen locked owes a full twenty minutes, not five. False for
+    ///   the minute it takes to fetch a coffee, where throwing away the banked
+    ///   progress would be absurd.
+    public func endAway(resetCycles: Bool) {
+        guard isAway else { return }
+        isAway = false
+        let now = clock.now
+        // Recompute the hold *first*, so the restarts below see the world as it
+        // is now rather than through the stale `.away`.
+        applyHold(at: now, idleSeconds: 0)
+        guard resetCycles else { return }
+        for kind in ReminderKind.allCases {
+            restartCycle(for: kind, at: now)
+        }
+    }
+
+    /// Takes a reminder off the screen because the Mac locked.
+    ///
+    /// Recorded as a skip, so the history stays honest about a reminder that
+    /// was shown and not acted on. The cycle restarts from scratch rather than
+    /// snoozing, so she asks again a full interval after the user comes back
+    /// instead of the moment they sit down.
+    private func withdraw(_ kind: ReminderKind, at now: Date) {
+        activeReminder = nil
+        activeSince = nil
+        record(.reminderIgnored(kind), at: now)
+        restartCycle(for: kind, at: now)
+        onEvent?(.reminderWithdrawn(kind))
     }
 
     // MARK: The tick
@@ -145,10 +214,14 @@ public final class ReminderEngine {
         }
     }
 
-    /// Pauses or resumes timers according to pause / quiet hours / idle state.
+    /// Pauses or resumes timers according to away / pause / focus / quiet hours
+    /// / idle state, in that order of precedence.
     private func applyHold(at now: Date, idleSeconds: TimeInterval) {
         let reason: EngineHoldReason?
-        if settings.remindersPaused {
+        if isAway {
+            // Outranks every other reason. A locked screen is not a preference.
+            reason = .away
+        } else if settings.remindersPaused {
             reason = .paused
         } else if isFocusing {
             // Held, not cancelled: the deadline is preserved, so a reminder due
@@ -266,6 +339,20 @@ public final class ReminderEngine {
     /// Records a completed focus session. Called by the app, not the engine.
     public func recordFocusSession(minutes: Double) {
         record(.focusSessionCompleted(minutes: minutes), at: clock.now)
+    }
+
+    /// Drops hour-by-hour detail recorded before `cutoff`, keeping every daily
+    /// total.
+    ///
+    /// Narrow on purpose. `replaceActivityLog` below would do the job, but it
+    /// is a developer tool that can overwrite the entire history, and handing a
+    /// production feature that much reach is how histories get lost. This can
+    /// only ever remove old timestamps.
+    public func clearEventDetail(before cutoff: Date) {
+        var log = activityLog
+        log.clearEvents(before: cutoff)
+        activityLog = log
+        activityLogStore?.save(log)
     }
 
     #if AITWIN_DEV

@@ -40,14 +40,25 @@ final class MenuBarController: NSObject, NSMenuDelegate {
     /// Falls back to an SF Symbol if the asset is missing, so a stripped bundle
     /// still shows something clickable rather than an invisible status item.
     private static func menuBarIcon() -> NSImage? {
+        // All three scales are loaded into one image, and this matters:
+        // `NSImage(contentsOf:)` does *not* do the @2x/@3x file matching that
+        // `NSImage(named:)` does for asset catalogues. Only the 1x file was ever
+        // being read, so on a Retina display a 24x14 bitmap was stretched to
+        // fill 14 points of a 2x bar -- a blurry icon, from files that were
+        // sitting right there unused.
         let image: NSImage?
-        if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png",
-                                     subdirectory: "MenuBar"),
-           let loaded = NSImage(contentsOf: url) {
-            image = loaded
-        } else if let url = Bundle.main.url(forResource: "MenuBarIcon", withExtension: "png"),
-                  let loaded = NSImage(contentsOf: url) {
-            image = loaded
+        let representations = ["", "@2x", "@3x"].compactMap { suffix -> NSImageRep? in
+            guard let url = Bundle.main.url(
+                forResource: "MenuBarIcon\(suffix)", withExtension: "png", subdirectory: "MenuBar"
+            ) ?? Bundle.main.url(forResource: "MenuBarIcon\(suffix)", withExtension: "png")
+            else { return nil }
+            return NSImageRep(contentsOf: url)
+        }
+
+        if let base = representations.first {
+            let combined = NSImage(size: NSSize(width: base.pixelsWide, height: base.pixelsHigh))
+            representations.forEach(combined.addRepresentation)
+            image = combined
         } else {
             image = NSImage(systemSymbolName: "person.2.circle", accessibilityDescription: "AiTwin")
         }

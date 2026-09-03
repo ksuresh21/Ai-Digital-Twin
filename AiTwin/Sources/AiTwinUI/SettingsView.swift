@@ -386,8 +386,8 @@ struct GeneralSettingsTab: View {
                 Toggle("Play sounds", isOn: $model.settings.sounds.enabled)
 
                 SoundPicker(
-                    title: "When a reminder appears",
-                    selection: $model.settings.sounds.reminder,
+                    title: "When you accept a reminder",
+                    selection: $model.settings.sounds.acknowledged,
                     onPreview: { model.onPreviewSound?($0) }
                 )
                 .disabled(!model.settings.sounds.enabled)
@@ -412,16 +412,17 @@ struct GeneralSettingsTab: View {
                     } onEditingChanged: { editing in
                         // Only when you let go. Previewing on every step of the
                         // drag would stutter one chime over the next.
-                        if !editing { model.onPreviewSound?(model.settings.sounds.reminder) }
+                        if !editing { model.onPreviewSound?(model.settings.sounds.acknowledged) }
                     }
                     Text("\(Int(model.settings.sounds.volume * 100))% of your Mac's alert volume.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 .disabled(!model.settings.sounds.enabled)
 
-                Text("macOS's own alert sounds — nothing extra is installed. The eye-break one "
-                     + "matters most: your screen is dimmed and you are looking away, so the "
-                     + "sound is how you know the break is over.")
+                Text("macOS's own alert sounds — nothing extra is installed. All three are "
+                     + "endings: nothing sounds when she walks in, only when something "
+                     + "finishes. The eye-break one matters most, since your screen is dimmed "
+                     + "and you are looking away.")
                     .font(.caption).foregroundStyle(.secondary)
 
                 if model.settings.quietHours.isEnabled {

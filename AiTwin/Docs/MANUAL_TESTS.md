@@ -273,8 +273,11 @@ water to 30 seconds and eye break to 1 minute.
 - [ ] Choosing a tone plays it immediately; the speaker button replays it
 - [ ] Turning "Play sounds" off greys all three pickers
 - [ ] Set the three to different tones. Test Mode, eye break at 10s, break lasting 20s:
-  - [ ] She appears → the **reminder** tone
-  - [ ] Tap "Looked away", wait out the dimmed countdown → the **break** tone at zero
+  - [ ] She walks in → **silence**. Nothing sounds on an arrival, ever
+  - [ ] Tap "Looked away" → the **accept** tone, on the press
+  - [ ] Wait out the dimmed countdown → the **break** tone at zero
+  - [ ] Let a water reminder time out untouched → **silence** (you pressed nothing)
+  - [ ] Snooze one → **silence**; only accepting counts
 - [ ] Start Focus → **no sound** at the start; the sound comes when the phase ends
 - [ ] Menu bar → Skip to Next Phase → the **focus** tone
 - [ ] Menu bar → End Focus → **no sound** (you ended it yourself)

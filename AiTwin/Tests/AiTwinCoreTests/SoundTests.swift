@@ -18,9 +18,9 @@ struct SoundTests {
     @Test("each cue plays its own tone")
     func cuesAreIndependent() {
         let sounds = SoundSettings(
-            enabled: true, reminder: .tink, breakOver: .glass, focusPhase: .hero
+            enabled: true, acknowledged: .tink, breakOver: .glass, focusPhase: .hero
         )
-        #expect(audible(sounds, .reminder) == .tink)
+        #expect(audible(sounds, .acknowledged) == .tink)
         #expect(audible(sounds, .breakOver) == .glass)
         #expect(audible(sounds, .focusPhase) == .hero)
     }
@@ -28,10 +28,10 @@ struct SoundTests {
     @Test("the master switch silences every cue, tones and all")
     func masterSwitchWins() {
         var sounds = SoundSettings(
-            enabled: true, reminder: .tink, breakOver: .glass, focusPhase: .hero
+            enabled: true, acknowledged: .tink, breakOver: .glass, focusPhase: .hero
         )
         sounds.enabled = false
-        #expect(audible(sounds, .reminder) == nil)
+        #expect(audible(sounds, .acknowledged) == nil)
         #expect(audible(sounds, .breakOver) == nil)
         #expect(audible(sounds, .focusPhase) == nil)
     }
@@ -39,13 +39,13 @@ struct SoundTests {
     @Test("switching sounds back on restores the tones you had chosen")
     func tonesSurviveTheSwitch() {
         var sounds = SoundSettings(
-            enabled: true, reminder: .submarine, breakOver: .purr, focusPhase: .frog
+            enabled: true, acknowledged: .submarine, breakOver: .purr, focusPhase: .frog
         )
         sounds.enabled = false
         sounds.enabled = true
         // The point of a master switch over three separate Nones: your choices
         // are still there when you come back.
-        #expect(audible(sounds, .reminder) == .submarine)
+        #expect(audible(sounds, .acknowledged) == .submarine)
         #expect(audible(sounds, .breakOver) == .purr)
         #expect(audible(sounds, .focusPhase) == .frog)
     }
@@ -53,9 +53,9 @@ struct SoundTests {
     @Test("one cue can be silenced without silencing the rest")
     func noneIsPerCue() {
         let sounds = SoundSettings(
-            enabled: true, reminder: .none, breakOver: .glass, focusPhase: .hero
+            enabled: true, acknowledged: .none, breakOver: .glass, focusPhase: .hero
         )
-        #expect(audible(sounds, .reminder) == nil)
+        #expect(audible(sounds, .acknowledged) == nil)
         #expect(audible(sounds, .breakOver) == .glass)
     }
 
@@ -82,7 +82,7 @@ struct SoundTests {
     @Test("the three defaults are distinct, so the cues are told apart by ear")
     func defaultsAreDistinguishable() {
         let defaults = SoundSettings.defaults
-        let chosen = [defaults.reminder, defaults.breakOver, defaults.focusPhase]
+        let chosen = [defaults.acknowledged, defaults.breakOver, defaults.focusPhase]
         #expect(Set(chosen).count == 3)
         #expect(!chosen.contains(.none))
         #expect(defaults.enabled)
@@ -129,17 +129,17 @@ struct SoundTests {
         let sounds = SoundSettings.defaults
         // 22:00 -> 07:00 is the default and the interesting shape: a naive
         // start <= t < end would leave the whole night audible.
-        #expect(inQuietHours(sounds, .reminder, at: at(hour: 23)) == nil)
-        #expect(inQuietHours(sounds, .reminder, at: at(hour: 3)) == nil)
-        #expect(inQuietHours(sounds, .reminder, at: at(hour: 6, minute: 59)) == nil)
-        #expect(inQuietHours(sounds, .reminder, at: at(hour: 7)) == .tink)
+        #expect(inQuietHours(sounds, .acknowledged, at: at(hour: 23)) == nil)
+        #expect(inQuietHours(sounds, .acknowledged, at: at(hour: 3)) == nil)
+        #expect(inQuietHours(sounds, .acknowledged, at: at(hour: 6, minute: 59)) == nil)
+        #expect(inQuietHours(sounds, .acknowledged, at: at(hour: 7)) == .tink)
     }
 
     @Test("quiet hours switched off silences nothing")
     func quietHoursDisabled() {
         let sounds = SoundSettings.defaults
         let off = QuietHours(isEnabled: false, startMinutes: 22 * 60, endMinutes: 7 * 60)
-        #expect(sounds.sound(for: .reminder, quietHours: off, at: at(hour: 23), calendar: .testUTC) == .tink)
+        #expect(sounds.sound(for: .acknowledged, quietHours: off, at: at(hour: 23), calendar: .testUTC) == .tink)
     }
 
     // MARK: Volume
@@ -161,7 +161,7 @@ struct SoundTests {
 
     @Test("a hand-edited settings file cannot smuggle in a bad volume")
     func volumeClampedOnDecode() throws {
-        let json = #"{"sounds":{"enabled":true,"reminder":"Tink","breakOver":"Glass","focusPhase":"Hero","volume":9}}"#
+        let json = #"{"sounds":{"enabled":true,"acknowledged":"Tink","breakOver":"Glass","focusPhase":"Hero","volume":9}}"#
         let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: Data(json.utf8))
         #expect(decoded.sounds.volume == 1)
     }
@@ -172,8 +172,49 @@ struct SoundTests {
         sounds.volume = 0
         // Still "enabled" -- the cue resolves to a tone, it is just inaudible.
         // Turning the app silent this way is the user's business, not a bug.
-        #expect(audible(sounds, .reminder) == .tink)
+        #expect(audible(sounds, .acknowledged) == .tink)
         #expect(sounds.volume == 0)
+    }
+
+    // MARK: The retired arrival cue
+
+    @Test("a tone chosen under the old name is carried over, not reset")
+    func legacyReminderKeyIsRead() throws {
+        // The field used to be called `reminder` and played when she walked in.
+        // It now plays when you press the button. Same tone, later moment — so
+        // someone who had chosen Submarine keeps Submarine.
+        let json = #"{"sounds":{"enabled":true,"reminder":"Submarine","breakOver":"Glass","focusPhase":"Hero","volume":1}}"#
+        let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: Data(json.utf8))
+        #expect(decoded.sounds.acknowledged == .submarine)
+    }
+
+    @Test("the new name wins if a file somehow has both")
+    func newKeyBeatsLegacy() throws {
+        let json = #"{"sounds":{"acknowledged":"Frog","reminder":"Submarine"}}"#
+        let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: Data(json.utf8))
+        #expect(decoded.sounds.acknowledged == .frog)
+    }
+
+    @Test("the retired name is read but never written back")
+    func legacyKeyIsNotRewritten() throws {
+        var sounds = SoundSettings.defaults
+        sounds.acknowledged = .frog
+        let data = try JSONEncoder().encode(sounds)
+        let text = String(decoding: data, as: UTF8.self)
+        // Otherwise every save would carry a second, stale copy of the field
+        // forward forever.
+        #expect(text.contains("acknowledged"))
+        #expect(!text.contains("\"reminder\""))
+    }
+
+    @Test("every cue is an ending — nothing announces her arrival")
+    func everyCueIsAnEnding() {
+        // The rule this whole rename exists to enforce. If a fourth cue is ever
+        // added for something that fires on her walking in, this is where the
+        // argument should happen.
+        let sounds = SoundSettings.defaults
+        let cues: [SoundCue] = [.acknowledged, .breakOver, .focusPhase]
+        #expect(cues.allSatisfy { audible(sounds, $0) != nil })
     }
 
     // MARK: Persistence
@@ -194,7 +235,7 @@ struct SoundTests {
     func roundTrips() throws {
         var settings = AiTwinSettings.defaults
         settings.sounds = SoundSettings(
-            enabled: false, reminder: .morse, breakOver: .none, focusPhase: .bottle, volume: 0.35
+            enabled: false, acknowledged: .morse, breakOver: .none, focusPhase: .bottle, volume: 0.35
         )
         let data = try JSONEncoder().encode(settings)
         let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: data)
@@ -203,11 +244,11 @@ struct SoundTests {
 
     @Test("a settings file with a sound name we no longer ship falls back")
     func unknownToneFallsBack() throws {
-        let json = #"{"sounds":{"enabled":true,"reminder":"Fanfare","breakOver":"Glass","focusPhase":"Hero"}}"#
+        let json = #"{"sounds":{"enabled":true,"acknowledged":"Fanfare","breakOver":"Glass","focusPhase":"Hero"}}"#
         let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: Data(json.utf8))
         // The unreadable field falls back on its own; the readable ones beside
         // it are kept rather than the whole block being thrown away.
-        #expect(decoded.sounds.reminder == SoundSettings.defaults.reminder)
+        #expect(decoded.sounds.acknowledged == SoundSettings.defaults.acknowledged)
         #expect(decoded.sounds.breakOver == .glass)
         #expect(decoded.sounds.volume == SoundSettings.defaults.volume)
     }

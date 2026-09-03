@@ -67,8 +67,10 @@ Each one can be accepted or snoozed, and each has its own interval and its own
 on/off switch.
 
 **Sounds** live in General: one switch to silence the lot, and a choice of any
-of macOS's built-in alert tones for three moments — a reminder arriving, an eye
-break ending, and a focus phase ending — plus a volume slider. Picking a tone
+of macOS's built-in alert tones for three moments — plus a volume slider. All
+three are *endings*: accepting a reminder, an eye break finishing, a focus phase
+closing. Nothing sounds when she walks in. She does that many times a day, and a
+chime on every arrival is a chime you learn to resent. Picking a tone
 plays it, so you are not choosing between fourteen names you have never heard.
 The eye-break one earns its keep: your screen is dimmed and you are deliberately
 looking away, so a sound is the only way to be told the break is over. Quiet

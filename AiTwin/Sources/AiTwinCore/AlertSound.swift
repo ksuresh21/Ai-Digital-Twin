@@ -41,9 +41,14 @@ public enum AlertSound: String, Codable, CaseIterable, Sendable {
 }
 
 /// Which moment a sound is being played for.
+///
+/// All three are *endings*. Nothing sounds when the character arrives: she walks
+/// in many times a day, and a chime on every walk-in is a chime you learn to
+/// resent. A sound here confirms something you finished — a button you pressed,
+/// a break that ran out, a focus phase that closed.
 public enum SoundCue: Equatable, Sendable {
-    /// She has appeared with a reminder — water, eyes or posture.
-    case reminder
+    /// You pressed the button on a reminder — "Done", "Looked away", "Stretched".
+    case acknowledged
     /// An eye break's countdown has run out.
     case breakOver
     /// A focus phase ended and the next one began.
@@ -58,8 +63,8 @@ public enum SoundCue: Equatable, Sendable {
 public struct SoundSettings: Codable, Equatable, Sendable {
     /// The master switch. Off means nothing plays, whatever the tones say.
     public var enabled: Bool
-    /// Played when a reminder appears.
-    public var reminder: AlertSound
+    /// Played when you accept a reminder by pressing its button.
+    public var acknowledged: AlertSound
     /// Played when the eye break's countdown finishes.
     ///
     /// The most useful of the three by some distance: during a break the screen
@@ -78,13 +83,13 @@ public struct SoundSettings: Codable, Equatable, Sendable {
 
     public init(
         enabled: Bool = true,
-        reminder: AlertSound = .tink,
+        acknowledged: AlertSound = .tink,
         breakOver: AlertSound = .glass,
         focusPhase: AlertSound = .hero,
         volume: Double = 1
     ) {
         self.enabled = enabled
-        self.reminder = reminder
+        self.acknowledged = acknowledged
         self.breakOver = breakOver
         self.focusPhase = focusPhase
         self.volume = Self.clamp(volume)
@@ -118,11 +123,11 @@ public struct SoundSettings: Codable, Equatable, Sendable {
     /// at 3am, and that bug would only ever be found at 3am.
     ///
     /// Reminders are already held by the engine during quiet hours, so this is
-    /// really about the two cues that can *cross into* the window: a focus
-    /// phase started at 21:50 that ends at 22:15, and an eye break accepted at
-    /// 21:59 whose countdown runs out at 22:01. The engine never stops those,
-    /// because you started them deliberately -- but "stay quiet during set
-    /// hours" has to mean quiet, or the setting is lying.
+    /// really about the cues that can *cross into* the window: a focus phase
+    /// started at 21:50 that ends at 22:15, and an eye break accepted at 21:59
+    /// whose countdown runs out at 22:01. The engine never stops those, because
+    /// you started them deliberately -- but "stay quiet during set hours" has to
+    /// mean quiet, or the setting is lying.
     public func sound(
         for cue: SoundCue,
         quietHours: QuietHours,
@@ -133,21 +138,45 @@ public struct SoundSettings: Codable, Equatable, Sendable {
         guard !quietHours.contains(now, calendar: calendar) else { return nil }
         let choice: AlertSound
         switch cue {
-        case .reminder:   choice = reminder
-        case .breakOver:  choice = breakOver
-        case .focusPhase: choice = focusPhase
+        case .acknowledged: choice = acknowledged
+        case .breakOver:    choice = breakOver
+        case .focusPhase:   choice = focusPhase
         }
         return choice == .none ? nil : choice
     }
 
     /// Decodes tolerantly, for the same reason `AiTwinSettings` does: a settings
     /// file written before sounds existed must not fail to decode.
+    private enum CodingKeys: String, CodingKey {
+        case enabled, acknowledged, breakOver, focusPhase, volume
+        /// Retired name for `acknowledged`, still read from older settings files.
+        case reminder
+    }
+
+    /// Written explicitly because `CodingKeys` carries a legacy key with no
+    /// property behind it, which is enough to stop the encoder being
+    /// synthesised. The retired name is read but never written back, so a file
+    /// saved by this version has one name for the field, not two.
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(enabled, forKey: .enabled)
+        try container.encode(acknowledged, forKey: .acknowledged)
+        try container.encode(breakOver, forKey: .breakOver)
+        try container.encode(focusPhase, forKey: .focusPhase)
+        try container.encode(volume, forKey: .volume)
+    }
+
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let fallback = SoundSettings.defaults
         enabled = (try? container.decodeIfPresent(Bool.self, forKey: .enabled)).flatMap { $0 } ?? fallback.enabled
         volume = Self.clamp((try? container.decodeIfPresent(Double.self, forKey: .volume)).flatMap { $0 } ?? fallback.volume)
-        reminder = (try? container.decodeIfPresent(AlertSound.self, forKey: .reminder)).flatMap { $0 } ?? fallback.reminder
+        // `reminder` is what this field was called when the sound played on
+        // her arrival rather than on your button press. Same tone, later
+        // moment -- so an existing choice is carried over rather than reset.
+        acknowledged = (try? container.decodeIfPresent(AlertSound.self, forKey: .acknowledged)).flatMap { $0 }
+            ?? (try? container.decodeIfPresent(AlertSound.self, forKey: .reminder)).flatMap { $0 }
+            ?? fallback.acknowledged
         breakOver = (try? container.decodeIfPresent(AlertSound.self, forKey: .breakOver)).flatMap { $0 } ?? fallback.breakOver
         focusPhase = (try? container.decodeIfPresent(AlertSound.self, forKey: .focusPhase)).flatMap { $0 } ?? fallback.focusPhase
     }

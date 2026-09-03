@@ -212,12 +212,15 @@ final class AppCoordinator {
     private func handle(_ event: ReminderEvent) {
         switch event {
         case .reminderDue(let kind, let message):
-            chime(.reminder)
             chatter.noteReminder(at: Date())
             pendingMessage = message
             stateMachine.handle(.summon(.reminder(kind)))
 
         case .reminderAcknowledged(let kind):
+            // Confirms the button press, not her arrival. She walks in many
+            // times a day; you only press this when you have actually done the
+            // thing, which is the moment worth a sound.
+            chime(.acknowledged)
             moods.noteAccepted(at: Date())
             if kind == .water {
                 // Logging the glass may already have triggered a goal or streak

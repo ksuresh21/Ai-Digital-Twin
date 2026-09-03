@@ -23,6 +23,8 @@ public struct StatsView: View {
     let exportStatus: String?
 
     @State private var range: Range = .today
+    /// Which activity the hour-by-hour line is showing. Nil is everything.
+    @State private var dayFilter: TimedEvent.Activity?
 
     public init(log: ActivityLog, streak: Int, best: Int, intake: WaterIntake,
                 exportStatus: String? = nil,
@@ -138,10 +140,32 @@ public struct StatsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                HourLine(buckets: HourlyActivity.buckets(from: events))
+                // One line at a time rather than four overlaid. Across 24 hours
+                // with a handful of events in each, four lines are mostly flat
+                // and mostly on top of each other -- readable as a legend, not
+                // as a chart. The filter has been in `HourlyActivity.buckets`
+                // since it was written; only the UI for it was missing, so
+                // every activity was counted into one anonymous total.
+                Picker("Showing", selection: $dayFilter) {
+                    Text("Everything").tag(TimedEvent.Activity?.none)
+                    ForEach(TimedEvent.Activity.allCases, id: \.self) { activity in
+                        Text(activity.displayName).tag(TimedEvent.Activity?.some(activity))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                let buckets = HourlyActivity.buckets(from: events, activity: dayFilter)
+                HourLine(buckets: buckets)
                     .frame(height: 110)
-                if let busiest = HourlyActivity.busiestHour(HourlyActivity.buckets(from: events)) {
+
+                if let busiest = HourlyActivity.busiestHour(buckets) {
                     Text("Busiest around \(Self.hourLabel(busiest.hour)).")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let filter = dayFilter {
+                    // An empty chart has to say *why* it is empty, or a filter
+                    // with nothing in it looks like the recording is broken.
+                    Text("No \(filter.displayName.lowercased()) logged today.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }

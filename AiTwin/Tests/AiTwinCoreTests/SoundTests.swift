@@ -7,6 +7,12 @@ import Testing
 @Suite("Sounds")
 struct SoundTests {
 
+    /// Noon, with quiet hours off — "no reason to be silent" for the tests that
+    /// are about something other than silence.
+    private func audible(_ sounds: SoundSettings, _ cue: SoundCue) -> AlertSound? {
+        sounds.sound(for: cue, quietHours: .disabled, at: Date(), calendar: .testUTC)
+    }
+
     // MARK: The master switch
 
     @Test("each cue plays its own tone")
@@ -14,9 +20,9 @@ struct SoundTests {
         let sounds = SoundSettings(
             enabled: true, reminder: .tink, breakOver: .glass, focusPhase: .hero
         )
-        #expect(sounds.sound(for: .reminder) == .tink)
-        #expect(sounds.sound(for: .breakOver) == .glass)
-        #expect(sounds.sound(for: .focusPhase) == .hero)
+        #expect(audible(sounds, .reminder) == .tink)
+        #expect(audible(sounds, .breakOver) == .glass)
+        #expect(audible(sounds, .focusPhase) == .hero)
     }
 
     @Test("the master switch silences every cue, tones and all")
@@ -25,9 +31,9 @@ struct SoundTests {
             enabled: true, reminder: .tink, breakOver: .glass, focusPhase: .hero
         )
         sounds.enabled = false
-        #expect(sounds.sound(for: .reminder) == nil)
-        #expect(sounds.sound(for: .breakOver) == nil)
-        #expect(sounds.sound(for: .focusPhase) == nil)
+        #expect(audible(sounds, .reminder) == nil)
+        #expect(audible(sounds, .breakOver) == nil)
+        #expect(audible(sounds, .focusPhase) == nil)
     }
 
     @Test("switching sounds back on restores the tones you had chosen")
@@ -39,9 +45,9 @@ struct SoundTests {
         sounds.enabled = true
         // The point of a master switch over three separate Nones: your choices
         // are still there when you come back.
-        #expect(sounds.sound(for: .reminder) == .submarine)
-        #expect(sounds.sound(for: .breakOver) == .purr)
-        #expect(sounds.sound(for: .focusPhase) == .frog)
+        #expect(audible(sounds, .reminder) == .submarine)
+        #expect(audible(sounds, .breakOver) == .purr)
+        #expect(audible(sounds, .focusPhase) == .frog)
     }
 
     @Test("one cue can be silenced without silencing the rest")
@@ -49,8 +55,8 @@ struct SoundTests {
         let sounds = SoundSettings(
             enabled: true, reminder: .none, breakOver: .glass, focusPhase: .hero
         )
-        #expect(sounds.sound(for: .reminder) == nil)
-        #expect(sounds.sound(for: .breakOver) == .glass)
+        #expect(audible(sounds, .reminder) == nil)
+        #expect(audible(sounds, .breakOver) == .glass)
     }
 
     // MARK: The tones themselves
@@ -82,6 +88,94 @@ struct SoundTests {
         #expect(defaults.enabled)
     }
 
+    // MARK: Quiet hours
+
+    /// A date at a given hour, in the fixed UTC calendar the tests use.
+    private func at(hour: Int, minute: Int = 0) -> Date {
+        var parts = DateComponents()
+        parts.year = 2023; parts.month = 11; parts.day = 14
+        parts.hour = hour; parts.minute = minute
+        return Calendar.testUTC.date(from: parts)!
+    }
+
+    private func inQuietHours(_ sounds: SoundSettings, _ cue: SoundCue, at date: Date) -> AlertSound? {
+        sounds.sound(
+            for: cue,
+            quietHours: QuietHours(isEnabled: true, startMinutes: 22 * 60, endMinutes: 7 * 60),
+            at: date,
+            calendar: .testUTC
+        )
+    }
+
+    @Test("quiet hours silences a focus phase that ran into the window")
+    func focusCrossingIntoQuietHours() {
+        // The case that motivated this: the engine holds *reminders* during
+        // quiet hours, but a focus session you started at 21:50 is not held --
+        // you started it deliberately. It still must not chime at 22:15.
+        let sounds = SoundSettings.defaults
+        #expect(inQuietHours(sounds, .focusPhase, at: at(hour: 21, minute: 50)) == .hero)
+        #expect(inQuietHours(sounds, .focusPhase, at: at(hour: 22, minute: 15)) == nil)
+    }
+
+    @Test("quiet hours silences an eye break whose countdown ends inside it")
+    func breakCrossingIntoQuietHours() {
+        let sounds = SoundSettings.defaults
+        #expect(inQuietHours(sounds, .breakOver, at: at(hour: 21, minute: 59)) == .glass)
+        #expect(inQuietHours(sounds, .breakOver, at: at(hour: 22, minute: 1)) == nil)
+    }
+
+    @Test("the window that crosses midnight is silent at both ends of it")
+    func quietHoursAcrossMidnight() {
+        let sounds = SoundSettings.defaults
+        // 22:00 -> 07:00 is the default and the interesting shape: a naive
+        // start <= t < end would leave the whole night audible.
+        #expect(inQuietHours(sounds, .reminder, at: at(hour: 23)) == nil)
+        #expect(inQuietHours(sounds, .reminder, at: at(hour: 3)) == nil)
+        #expect(inQuietHours(sounds, .reminder, at: at(hour: 6, minute: 59)) == nil)
+        #expect(inQuietHours(sounds, .reminder, at: at(hour: 7)) == .tink)
+    }
+
+    @Test("quiet hours switched off silences nothing")
+    func quietHoursDisabled() {
+        let sounds = SoundSettings.defaults
+        let off = QuietHours(isEnabled: false, startMinutes: 22 * 60, endMinutes: 7 * 60)
+        #expect(sounds.sound(for: .reminder, quietHours: off, at: at(hour: 23), calendar: .testUTC) == .tink)
+    }
+
+    // MARK: Volume
+
+    @Test("volume defaults to full, and is a level not a switch")
+    func volumeDefault() {
+        #expect(SoundSettings.defaults.volume == 1)
+    }
+
+    @Test("a volume outside 0...1 is clamped rather than trusted")
+    func volumeClamped() {
+        // NSSound silently ignores a value out of range, which would look like
+        // the whole sound feature broke rather than like one bad number.
+        #expect(SoundSettings(volume: 4).volume == 1)
+        #expect(SoundSettings(volume: -2).volume == 0)
+        #expect(SoundSettings(volume: .nan).volume == 1)
+        #expect(SoundSettings(volume: 0.4).volume == 0.4)
+    }
+
+    @Test("a hand-edited settings file cannot smuggle in a bad volume")
+    func volumeClampedOnDecode() throws {
+        let json = #"{"sounds":{"enabled":true,"reminder":"Tink","breakOver":"Glass","focusPhase":"Hero","volume":9}}"#
+        let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: Data(json.utf8))
+        #expect(decoded.sounds.volume == 1)
+    }
+
+    @Test("silence is a volume of zero, and stays a valid setting")
+    func volumeZero() {
+        var sounds = SoundSettings.defaults
+        sounds.volume = 0
+        // Still "enabled" -- the cue resolves to a tone, it is just inaudible.
+        // Turning the app silent this way is the user's business, not a bug.
+        #expect(audible(sounds, .reminder) == .tink)
+        #expect(sounds.volume == 0)
+    }
+
     // MARK: Persistence
 
     @Test("settings saved before sounds existed still load")
@@ -100,7 +194,7 @@ struct SoundTests {
     func roundTrips() throws {
         var settings = AiTwinSettings.defaults
         settings.sounds = SoundSettings(
-            enabled: false, reminder: .morse, breakOver: .none, focusPhase: .bottle
+            enabled: false, reminder: .morse, breakOver: .none, focusPhase: .bottle, volume: 0.35
         )
         let data = try JSONEncoder().encode(settings)
         let decoded = try JSONDecoder().decode(AiTwinSettings.self, from: data)
@@ -115,6 +209,7 @@ struct SoundTests {
         // it are kept rather than the whole block being thrown away.
         #expect(decoded.sounds.reminder == SoundSettings.defaults.reminder)
         #expect(decoded.sounds.breakOver == .glass)
+        #expect(decoded.sounds.volume == SoundSettings.defaults.volume)
     }
 }
 

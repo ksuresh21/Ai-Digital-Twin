@@ -19,7 +19,7 @@ public final class MacSoundPlayer: SoundPlaying {
 
     public init() {}
 
-    public func play(_ sound: AlertSound) {
+    public func play(_ sound: AlertSound, at volume: Double) {
         guard let name = sound.systemName else { return }
 
         let audio: NSSound
@@ -39,6 +39,9 @@ public final class MacSoundPlayer: SoundPlaying {
         // preview button twice would seem broken.
         if audio.isPlaying { audio.stop() }
         audio.currentTime = 0
+        // Set every time, not once at load: the sounds are cached and reused, so
+        // a volume change would otherwise not take effect until relaunch.
+        audio.volume = Float(min(1, max(0, volume)))
         playing = audio
         audio.play()
     }

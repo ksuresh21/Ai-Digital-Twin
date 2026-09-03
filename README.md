@@ -68,10 +68,12 @@ on/off switch.
 
 **Sounds** live in General: one switch to silence the lot, and a choice of any
 of macOS's built-in alert tones for three moments — a reminder arriving, an eye
-break ending, and a focus phase ending. Picking a tone plays it, so you are not
-choosing between fourteen names you have never heard. The eye-break one earns
-its keep: your screen is dimmed and you are deliberately looking away, so a
-sound is the only way to be told the break is over.
+break ending, and a focus phase ending — plus a volume slider. Picking a tone
+plays it, so you are not choosing between fourteen names you have never heard.
+The eye-break one earns its keep: your screen is dimmed and you are deliberately
+looking away, so a sound is the only way to be told the break is over. Quiet
+hours silences all of it, including a focus phase or eye break that started
+before the window and ends inside it.
 
 <p align="center">
   <img src="AiTwin/Resources/Screenshots/05-eyebreak-dimming.png" alt="Eye break dimming the screen with a countdown" width="640">

@@ -89,7 +89,8 @@ public protocol PresenceObserving: AnyObject {
 /// that is otherwise untestable: without a seam here, asserting "the eye break
 /// chimes when it ends" would mean listening to the speakers.
 public protocol SoundPlaying: AnyObject {
-    func play(_ sound: AlertSound)
+    /// - Parameter volume: 0...1, relative to the system alert volume.
+    func play(_ sound: AlertSound, at volume: Double)
 }
 
 /// Registers or unregisters the app as a login item.

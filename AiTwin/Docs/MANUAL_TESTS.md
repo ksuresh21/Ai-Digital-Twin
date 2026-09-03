@@ -280,6 +280,17 @@ water to 30 seconds and eye break to 1 minute.
 - [ ] Menu bar → End Focus → **no sound** (you ended it yourself)
 - [ ] Set a tone to None: that cue is silent, the other two still play
 - [ ] Turn sounds off, quit, reopen: still off, and the tones you chose are remembered
+- [ ] Drag the **Volume** slider: nothing plays mid-drag, one preview on release
+- [ ] At 20% the chime is clearly quieter than at 100%; at 0% it is silent
+
+**F-S3. Quiet hours silences sounds**
+- [ ] Set quiet hours to a window covering **now**. A note appears under the Sounds
+      section saying so, naming the window
+- [ ] Test Mode, focus session length 10 seconds. Start Focus, let the phase end
+      → **no sound** (and no sound from the eye break either)
+- [ ] Move the window so it does *not* cover now → the same phase change chimes again
+- [ ] The preview button and tone-picker previews still play **inside** quiet hours
+      — you asked to hear them
 
 **F-P1. Progress — Today**
 - [ ] Settings → Progress opens on **Today** by default, with a Today / Last 7 days picker
@@ -287,6 +298,11 @@ water to 30 seconds and eye break to 1 minute.
 - [ ] Rows for eye breaks taken, stretches done, focus sessions, and skipped
 - [ ] Snoozed and missed counts appear under the relevant row when non-zero
 - [ ] "Through the day" draws a **line** once something is logged today
+- [ ] A **Showing** picker above it: Everything, Water, Eye breaks, Stretches, Focus
+- [ ] Log a glass and accept a stretch. Each filter shows only its own events,
+      and "Everything" shows both
+- [ ] Pick a filter with nothing in it → a flat line and "No … logged today.",
+      not a silently empty chart
 - [ ] Before anything is logged it explains that hour-by-hour starts from today
       onwards and cannot show past days
 - [ ] The streak line says **what a streak is** — days in a row hitting your

@@ -190,14 +190,21 @@ final class AppCoordinator {
     /// in exactly one place and there is no path that can accidentally make noise
     /// with sounds turned off.
     private func chime(_ cue: SoundCue) {
-        guard let sound = settings.sounds.sound(for: cue) else { return }
-        sounds.play(sound)
+        let sound = settings.sounds.sound(
+            for: cue, quietHours: settings.quietHours, at: Date()
+        )
+        guard let sound else { return }
+        sounds.play(sound, at: settings.sounds.volume)
     }
 
     /// Plays a tone on demand, so Settings can audition one before you commit.
-    /// Deliberately ignores the master switch: you are asking to hear it.
+    ///
+    /// Deliberately ignores the master switch and quiet hours: you have the
+    /// window open and you pressed the button, so refusing to play the thing you
+    /// asked to hear would just look broken. It does honour the volume, since
+    /// that is the one setting you are most likely auditioning.
     func previewSound(_ sound: AlertSound) {
-        sounds.play(sound)
+        sounds.play(sound, at: settings.sounds.volume)
     }
 
     // MARK: Engine events

@@ -69,17 +69,33 @@ public struct SoundSettings: Codable, Equatable, Sendable {
     public var breakOver: AlertSound
     /// Played when a focus session or focus break ends.
     public var focusPhase: AlertSound
+    /// How loud, 0...1, relative to the system alert volume.
+    ///
+    /// One level for all three cues rather than one each: the reason to reach
+    /// for this is "the chime startles me", which is about the app, not about
+    /// which moment produced the sound.
+    public var volume: Double
 
     public init(
         enabled: Bool = true,
         reminder: AlertSound = .tink,
         breakOver: AlertSound = .glass,
-        focusPhase: AlertSound = .hero
+        focusPhase: AlertSound = .hero,
+        volume: Double = 1
     ) {
         self.enabled = enabled
         self.reminder = reminder
         self.breakOver = breakOver
         self.focusPhase = focusPhase
+        self.volume = Self.clamp(volume)
+    }
+
+    /// Volume is stored from a slider and read from a settings file that a user
+    /// could have edited, so it is clamped rather than trusted. `NSSound`
+    /// silently ignores a value outside 0...1, which would look like the sound
+    /// feature breaking rather than like a bad number.
+    static func clamp(_ value: Double) -> Double {
+        min(1, max(0, value.isFinite ? value : 1))
     }
 
     /// Quiet, distinct defaults. `Tink` is the softest thing in the set, which
@@ -93,10 +109,28 @@ public struct SoundSettings: Codable, Equatable, Sendable {
 
     /// What to actually play for a cue, or nil for silence.
     ///
-    /// The one place the master switch is applied. Callers ask this question and
-    /// play what comes back; nobody else gets to decide what "enabled" means.
-    public func sound(for cue: SoundCue) -> AlertSound? {
+    /// The one place the master switch and quiet hours are applied. Callers ask
+    /// this question and play what comes back; nobody else gets to decide what
+    /// "enabled" means.
+    ///
+    /// Quiet hours is a required argument rather than a defaulted one on
+    /// purpose. A default would let a future call site forget it and make noise
+    /// at 3am, and that bug would only ever be found at 3am.
+    ///
+    /// Reminders are already held by the engine during quiet hours, so this is
+    /// really about the two cues that can *cross into* the window: a focus
+    /// phase started at 21:50 that ends at 22:15, and an eye break accepted at
+    /// 21:59 whose countdown runs out at 22:01. The engine never stops those,
+    /// because you started them deliberately -- but "stay quiet during set
+    /// hours" has to mean quiet, or the setting is lying.
+    public func sound(
+        for cue: SoundCue,
+        quietHours: QuietHours,
+        at now: Date,
+        calendar: Calendar = .current
+    ) -> AlertSound? {
         guard enabled else { return nil }
+        guard !quietHours.contains(now, calendar: calendar) else { return nil }
         let choice: AlertSound
         switch cue {
         case .reminder:   choice = reminder
@@ -112,6 +146,7 @@ public struct SoundSettings: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         let fallback = SoundSettings.defaults
         enabled = (try? container.decodeIfPresent(Bool.self, forKey: .enabled)).flatMap { $0 } ?? fallback.enabled
+        volume = Self.clamp((try? container.decodeIfPresent(Double.self, forKey: .volume)).flatMap { $0 } ?? fallback.volume)
         reminder = (try? container.decodeIfPresent(AlertSound.self, forKey: .reminder)).flatMap { $0 } ?? fallback.reminder
         breakOver = (try? container.decodeIfPresent(AlertSound.self, forKey: .breakOver)).flatMap { $0 } ?? fallback.breakOver
         focusPhase = (try? container.decodeIfPresent(AlertSound.self, forKey: .focusPhase)).flatMap { $0 } ?? fallback.focusPhase

@@ -86,7 +86,7 @@ platform layer supplies `NSScreen.visibleFrame` and applies the answer.
 | `WaterLog.swift` | Daily counter with midnight rollover |
 | `MessageCatalog.swift` | Greetings and non-repeating reminder pools |
 | `PresenceTracker.swift` | Whether a spell away from the Mac was long enough to reset for |
-| `AlertSound.swift` | Which of the built-in alert sounds plays at which moment |
+| `AlertSound.swift` | Which of the built-in alert sounds plays at which moment, and when silence wins |
 
 ### `AiTwinPlatform` — the seam (7 protocols, no implementations)
 

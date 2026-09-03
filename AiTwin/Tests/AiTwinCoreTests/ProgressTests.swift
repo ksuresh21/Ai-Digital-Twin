@@ -137,6 +137,31 @@ struct ProgressDataTests {
         #expect(HourlyActivity.buckets(from: events, activity: .focus, calendar: calendar)[9].count == 0)
     }
 
+    @Test("every activity the app tracks can be picked out of the day line")
+    func everyActivityIsFilterable() {
+        // Stretches were the gap: the filter worked, but the Progress tab only
+        // ever asked for the unfiltered total, so a stretch was counted into an
+        // anonymous number and could not be seen on its own.
+        var log = ActivityLog()
+        log.apply(.glassLogged(goal: 8), at: at(hour: 9), calendar: calendar)
+        log.apply(.reminderAccepted(.eyeBreak), at: at(hour: 10), calendar: calendar)
+        log.apply(.reminderAccepted(.stretch), at: at(hour: 11), calendar: calendar)
+        log.apply(.focusSessionCompleted(minutes: 25), at: at(hour: 12), calendar: calendar)
+        let events = log.events(on: noon, calendar: calendar)
+
+        let hours = [TimedEvent.Activity.water: 9, .eyeBreak: 10, .stretch: 11, .focus: 12]
+        for activity in TimedEvent.Activity.allCases {
+            let buckets = HourlyActivity.buckets(from: events, activity: activity, calendar: calendar)
+            let total = buckets.reduce(0) { $0 + $1.count }
+            #expect(total == 1, "\(activity.displayName) should appear exactly once")
+            #expect(HourlyActivity.busiestHour(buckets)?.hour == hours[activity])
+        }
+
+        // And the unfiltered line is still the sum of the four.
+        let all = HourlyActivity.buckets(from: events, calendar: calendar)
+        #expect(all.reduce(0) { $0 + $1.count } == 4)
+    }
+
     @Test("skipped reminders are left out of the activity line by default")
     func hourlyIgnoresSkips() {
         var log = ActivityLog()

@@ -406,10 +406,31 @@ struct GeneralSettingsTab: View {
                 )
                 .disabled(!model.settings.sounds.enabled)
 
+                VStack(alignment: .leading) {
+                    Slider(value: $model.settings.sounds.volume, in: 0...1) {
+                        Text("Volume")
+                    } onEditingChanged: { editing in
+                        // Only when you let go. Previewing on every step of the
+                        // drag would stutter one chime over the next.
+                        if !editing { model.onPreviewSound?(model.settings.sounds.reminder) }
+                    }
+                    Text("\(Int(model.settings.sounds.volume * 100))% of your Mac's alert volume.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                .disabled(!model.settings.sounds.enabled)
+
                 Text("macOS's own alert sounds — nothing extra is installed. The eye-break one "
                      + "matters most: your screen is dimmed and you are looking away, so the "
                      + "sound is how you know the break is over.")
                     .font(.caption).foregroundStyle(.secondary)
+
+                if model.settings.quietHours.isEnabled {
+                    Text("Quiet hours below silences these too, between "
+                         + "\(QuietHours.format(minuteOfDay: model.settings.quietHours.startMinutes)) and "
+                         + "\(QuietHours.format(minuteOfDay: model.settings.quietHours.endMinutes)) — including a "
+                         + "focus phase or an eye break that runs into the window.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
 
             Section("Quiet hours") {

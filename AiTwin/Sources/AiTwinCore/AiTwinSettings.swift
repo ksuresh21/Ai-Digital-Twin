@@ -29,6 +29,10 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
     // MARK: Quiet hours
     public var quietHours: QuietHours
 
+    // MARK: Sounds
+    /// Whether and what to play at the three moments worth hearing.
+    public var sounds: SoundSettings
+
     // MARK: Water tracking
     /// Glass size and daily target, both in millilitres.
     public var water: WaterIntake
@@ -91,6 +95,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         pauseWhenIdle: true,
         idleThreshold: AiTwinConfiguration.production.idlePauseThreshold,
         quietHours: .disabled,
+        sounds: .defaults,
         water: .default,
         eyeBreakDuration: 60,
         dimsScreenOnBreak: true,
@@ -138,6 +143,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         pauseWhenIdle       = value(.pauseWhenIdle, fallback.pauseWhenIdle)
         idleThreshold       = value(.idleThreshold, fallback.idleThreshold)
         quietHours          = value(.quietHours, fallback.quietHours)
+        sounds              = value(.sounds, fallback.sounds)
         water               = value(.water, fallback.water)
         eyeBreakDuration    = value(.eyeBreakDuration, fallback.eyeBreakDuration)
         dimsScreenOnBreak   = value(.dimsScreenOnBreak, fallback.dimsScreenOnBreak)
@@ -168,7 +174,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         stretchInterval: TimeInterval,
         snoozeInterval: TimeInterval, remindersPaused: Bool,
         pauseWhenIdle: Bool, idleThreshold: TimeInterval,
-        quietHours: QuietHours, water: WaterIntake,
+        quietHours: QuietHours, sounds: SoundSettings, water: WaterIntake,
         eyeBreakDuration: TimeInterval, dimsScreenOnBreak: Bool, dimOpacity: Double,
         focusSessionLength: TimeInterval, focusBreakLength: TimeInterval,
         focusLongBreakLength: TimeInterval, sessionsBeforeLongBreak: Int,
@@ -192,6 +198,7 @@ public struct AiTwinSettings: Codable, Equatable, Sendable {
         self.pauseWhenIdle = pauseWhenIdle
         self.idleThreshold = idleThreshold
         self.quietHours = quietHours
+        self.sounds = sounds
         self.water = water
         self.eyeBreakDuration = eyeBreakDuration
         self.dimsScreenOnBreak = dimsScreenOnBreak

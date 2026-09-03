@@ -86,11 +86,12 @@ platform layer supplies `NSScreen.visibleFrame` and applies the answer.
 | `WaterLog.swift` | Daily counter with midnight rollover |
 | `MessageCatalog.swift` | Greetings and non-repeating reminder pools |
 | `PresenceTracker.swift` | Whether a spell away from the Mac was long enough to reset for |
+| `AlertSound.swift` | Which of the built-in alert sounds plays at which moment |
 
-### `AiTwinPlatform` — the seam (6 protocols, no implementations)
+### `AiTwinPlatform` — the seam (7 protocols, no implementations)
 
 `ScreenProviding` · `WindowManaging` · `IdleMonitoring` · `PresenceObserving` ·
-`LoginItemManaging` · `CharacterPackLoading`
+`SoundPlaying` · `LoginItemManaging` · `CharacterPackLoading`
 
 Everything the domain needs from an operating system, and nothing else. The
 narrowness is the point: a Windows port has six things to implement, not "the
@@ -175,7 +176,7 @@ machine, animation sequencing, frame discovery, pack resolution, placement
 maths, quiet hours, water logging, settings, messages. It imports only
 Foundation, which is available in the Swift Windows toolchain.
 
-**Requires a Windows implementation — the six `AiTwinPlatform` protocols:**
+**Requires a Windows implementation — the seven `AiTwinPlatform` protocols:**
 
 | Protocol | Likely Windows approach | Risk |
 |---|---|---|
@@ -183,6 +184,7 @@ Foundation, which is available in the Swift Windows toolchain.
 | `ScreenProviding` | `EnumDisplayMonitors`, `GetMonitorInfo` | Low — coordinate space differs (y-down), so conversion belongs in the adapter |
 | `IdleMonitoring` | `GetLastInputInfo` | Low |
 | `PresenceObserving` | `WM_POWERBROADCAST` for sleep, plus `WTSRegisterSessionNotification` → `WTS_SESSION_LOCK` / `WTS_SESSION_UNLOCK` | Low — and the lock half is *public* API on Windows, unlike macOS |
+| `SoundPlaying` | `PlaySound` with `SND_ALIAS`, over the registry's `AppEvents` scheme | Low — the *names* differ, so `AlertSound`'s cases would need a per-platform mapping rather than being file names |
 | `LoginItemManaging` | `HKCU\...\Run` registry key or Task Scheduler | Low |
 | `CharacterPackLoading` | Same logic, `%APPDATA%\AiTwin\Characters` | Low |
 

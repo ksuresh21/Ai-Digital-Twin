@@ -83,6 +83,15 @@ public protocol PresenceObserving: AnyObject {
     func stop()
 }
 
+/// Plays one of the system alert sounds.
+///
+/// A protocol for something this small because it is exactly the kind of call
+/// that is otherwise untestable: without a seam here, asserting "the eye break
+/// chimes when it ends" would mean listening to the speakers.
+public protocol SoundPlaying: AnyObject {
+    func play(_ sound: AlertSound)
+}
+
 /// Registers or unregisters the app as a login item.
 public protocol LoginItemManaging: AnyObject {
     var isEnabled: Bool { get }

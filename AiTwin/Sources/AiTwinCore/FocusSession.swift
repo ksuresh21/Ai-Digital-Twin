@@ -42,6 +42,16 @@ public struct FocusSession: Equatable, Sendable {
 
     public var endsAt: Date { startedAt.addingTimeInterval(duration) }
 
+    /// Whether arriving in this phase means a previous one just *ended*.
+    ///
+    /// Every phase change is an ending except the first, which is a beginning
+    /// with nothing behind it to announce. The two are told apart without a
+    /// flag: the opening phase is always `.working` with no sessions completed
+    /// yet, and a `.working` phase reached any other way follows a break.
+    public var endsAPreviousPhase: Bool {
+        phase.isBreak || completedSessions > 0
+    }
+
     public func remaining(at now: Date) -> TimeInterval { max(0, endsAt.timeIntervalSince(now)) }
     public func isFinished(at now: Date) -> Bool { now >= endsAt }
 

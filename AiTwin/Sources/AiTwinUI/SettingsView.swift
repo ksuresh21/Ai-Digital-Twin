@@ -60,7 +60,7 @@ public struct SettingsView: View {
             case .focus:     return "Sessions and chatter"
             case .character: return "Look and message style"
             case .stats:     return "Streaks and history"
-            case .general:   return "Name, startup, quiet hours"
+            case .general:   return "Name, startup, sounds, quiet hours"
             #if AITWIN_DEV
             case .developer: return "Previews and sample data"
             #endif
@@ -243,6 +243,20 @@ struct RemindersSettingsTab: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
 
+            Section("Stretch") {
+                Toggle("Remind me to stand up and stretch", isOn: $model.settings.stretchEnabled)
+                IntervalPicker(
+                    title: "Every",
+                    value: $model.settings.stretchInterval,
+                    choices: model.choices(including: model.settings.stretchInterval)
+                )
+                .disabled(!model.settings.stretchEnabled)
+
+                Text("She stands up and stretches with you. Longer gaps than the other two on "
+                     + "purpose — an hour at the desk is what stiffens a back, and being asked "
+                     + "to stand every twenty minutes is what makes people switch a feature off.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
 
             Section("When you are away") {
                 Toggle("Only count time I'm actually using the Mac", isOn: $model.settings.pauseWhenIdle)
@@ -362,6 +376,42 @@ struct GeneralSettingsTab: View {
                 Toggle("Say hello when the Mac wakes up", isOn: $model.settings.greetOnWake)
             }
 
+            // All three tones live here rather than beside the features they
+            // belong to, because the master switch has to sit with them. Split
+            // across the Reminders and Focus tabs, "turn the sounds off" would
+            // mean finding a checkbox in one tab that silences a picker in
+            // another -- so this follows System Settings and keeps sound in one
+            // place.
+            Section("Sounds") {
+                Toggle("Play sounds", isOn: $model.settings.sounds.enabled)
+
+                SoundPicker(
+                    title: "When a reminder appears",
+                    selection: $model.settings.sounds.reminder,
+                    onPreview: { model.onPreviewSound?($0) }
+                )
+                .disabled(!model.settings.sounds.enabled)
+
+                SoundPicker(
+                    title: "When an eye break ends",
+                    selection: $model.settings.sounds.breakOver,
+                    onPreview: { model.onPreviewSound?($0) }
+                )
+                .disabled(!model.settings.sounds.enabled)
+
+                SoundPicker(
+                    title: "When a focus phase ends",
+                    selection: $model.settings.sounds.focusPhase,
+                    onPreview: { model.onPreviewSound?($0) }
+                )
+                .disabled(!model.settings.sounds.enabled)
+
+                Text("macOS's own alert sounds — nothing extra is installed. The eye-break one "
+                     + "matters most: your screen is dimmed and you are looking away, so the "
+                     + "sound is how you know the break is over.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+
             Section("Quiet hours") {
                 Toggle("Stay quiet during set hours", isOn: $model.settings.quietHours.isEnabled)
                 TimeOfDayPicker(title: "From", minutes: $model.settings.quietHours.startMinutes)
@@ -388,6 +438,48 @@ struct IntervalPicker: View {
             ForEach(choices, id: \.seconds) { choice in
                 Text(choice.displayName).tag(choice.seconds)
             }
+        }
+    }
+}
+
+/// A tone picker that plays what you land on.
+///
+/// Auditioning on selection rather than hiding the sound behind a separate play
+/// button, because choosing between fourteen names you cannot hear is guesswork.
+/// The speaker button repeats the current one without having to reselect it.
+///
+/// Laid out as label + spacer + unlabelled control, which is what
+/// `TimeOfDayPicker` below already does: a bare `Picker` in a grouped Form gets
+/// that alignment for free, but wrapping one in an `HStack` to fit the button
+/// beside it loses it, and these rows would then sit out of line with every
+/// other row in the window.
+struct SoundPicker: View {
+    let title: String
+    @Binding var selection: AlertSound
+    let onPreview: (AlertSound) -> Void
+
+    var body: some View {
+        HStack {
+            Text(title)
+            Spacer(minLength: 8)
+
+            Picker("", selection: $selection) {
+                ForEach(AlertSound.allCases, id: \.self) { sound in
+                    Text(sound.displayName).tag(sound)
+                }
+            }
+            .labelsHidden()
+            .frame(width: 132)
+            .onChange(of: selection) { _, new in onPreview(new) }
+
+            Button {
+                onPreview(selection)
+            } label: {
+                Image(systemName: "speaker.wave.2.fill")
+            }
+            .buttonStyle(.borderless)
+            .help("Play this sound")
+            .disabled(selection == .none)
         }
     }
 }

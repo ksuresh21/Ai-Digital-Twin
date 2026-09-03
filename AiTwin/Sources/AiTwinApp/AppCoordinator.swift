@@ -31,6 +31,7 @@ final class AppCoordinator {
     private let loginItem: LoginItemManaging
     private let packLoader: MacCharacterPackLoader
     private let dimmer: MacScreenDimmer
+    private let sounds: SoundPlaying
     private let imageCache = FrameImageCache()
     /// Shared with the engine so reminder lines and greetings draw from one
     /// non-repeating catalogue.
@@ -70,7 +71,8 @@ final class AppCoordinator {
         presence: PresenceObserving = MacPresenceObserver(),
         loginItem: LoginItemManaging = MacLoginItem(),
         packLoader: MacCharacterPackLoader = MacCharacterPackLoader(),
-        dimmer: MacScreenDimmer = MacScreenDimmer()
+        dimmer: MacScreenDimmer = MacScreenDimmer(),
+        sounds: SoundPlaying = MacSoundPlayer()
     ) {
         self.settingsStore = settingsStore
         self.settings = settingsStore.load()
@@ -81,6 +83,7 @@ final class AppCoordinator {
         self.loginItem = loginItem
         self.packLoader = packLoader
         self.dimmer = dimmer
+        self.sounds = sounds
 
         self.engine = ReminderEngine(
             settings: settings,
@@ -179,11 +182,30 @@ final class AppCoordinator {
         }
     }
 
+    // MARK: Sound
+
+    /// Plays the tone chosen for a cue, if any.
+    ///
+    /// Every chime in the app goes through here, so the master switch is honoured
+    /// in exactly one place and there is no path that can accidentally make noise
+    /// with sounds turned off.
+    private func chime(_ cue: SoundCue) {
+        guard let sound = settings.sounds.sound(for: cue) else { return }
+        sounds.play(sound)
+    }
+
+    /// Plays a tone on demand, so Settings can audition one before you commit.
+    /// Deliberately ignores the master switch: you are asking to hear it.
+    func previewSound(_ sound: AlertSound) {
+        sounds.play(sound)
+    }
+
     // MARK: Engine events
 
     private func handle(_ event: ReminderEvent) {
         switch event {
         case .reminderDue(let kind, let message):
+            chime(.reminder)
             chatter.noteReminder(at: Date())
             pendingMessage = message
             stateMachine.handle(.summon(.reminder(kind)))
@@ -620,6 +642,9 @@ final class AppCoordinator {
 
     private func finishBreak() {
         endBreak()
+        // The whole point of the break is that you are not looking at the
+        // screen, so this is the cue that most needs a sound.
+        chime(.breakOver)
         companionModel.bubble = CompanionViewModel.Bubble(
             message: catalog.nextBreakDoneMessage(name: settings.userName)
         )
@@ -763,6 +788,8 @@ final class AppCoordinator {
         // Only *working* suppresses reminders; the break is when held reminders
         // are meant to arrive.
         engine.isFocusing = session.phase == .working
+
+        if session.endsAPreviousPhase { chime(.focusPhase) }
 
         if session.phase == .working {
             stateMachine.handle(.summon(.focus))

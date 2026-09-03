@@ -207,6 +207,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsModel.onStartFocus = { [weak self] in
             self?.coordinator.startFocusSession()
         }
+        settingsModel.onPreviewSound = { [weak self] sound in
+            self?.coordinator.previewSound(sound)
+        }
         settingsModel.onClearOldDetail = { [weak self] cutoff in
             self?.coordinator.clearOldDetail(before: cutoff)
             self?.refreshSettingsModel()

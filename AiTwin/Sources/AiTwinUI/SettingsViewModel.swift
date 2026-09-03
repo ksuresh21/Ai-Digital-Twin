@@ -43,6 +43,8 @@ public final class SettingsViewModel: ObservableObject {
     /// Plays one clip on demand so new artwork can be checked.
     public var onPreviewClip: ((String) -> Void)?
     public var onStartFocus: (() -> Void)?
+    /// Plays one alert sound so a tone can be heard before it is chosen.
+    public var onPreviewSound: ((AlertSound) -> Void)?
     /// Saves the recorded history to a file the user picks.
     /// What the last export wrote, shown under the export button.
     @Published public var exportStatus: String?

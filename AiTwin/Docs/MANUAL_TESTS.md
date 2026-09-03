@@ -260,6 +260,27 @@ water to 30 seconds and eye break to 1 minute.
 
 ## F. Settings and configuration
 
+**F-S1. Stretch reminders**
+- [ ] Settings → Reminders has a **Stretch** section between Eye breaks and When you are away
+- [ ] It is on by default, set to **every 60 minutes**, with the picker showing that (not "Custom")
+- [ ] Turning it off greys the interval picker and leaves Water and Eye breaks running
+- [ ] Menu bar → Remind Me Now lists Stretch while it is on, and drops it when off
+- [ ] With Test Mode on, set it to 10 seconds: she arrives and plays the **stretch** clip
+- [ ] Menu bar → Status shows a "Next stretch in …" countdown that changes with the setting
+
+**F-S2. Sounds**
+- [ ] Settings → General has a **Sounds** section: one "Play sounds" toggle and three tone pickers
+- [ ] Choosing a tone plays it immediately; the speaker button replays it
+- [ ] Turning "Play sounds" off greys all three pickers
+- [ ] Set the three to different tones. Test Mode, eye break at 10s, break lasting 20s:
+  - [ ] She appears → the **reminder** tone
+  - [ ] Tap "Looked away", wait out the dimmed countdown → the **break** tone at zero
+- [ ] Start Focus → **no sound** at the start; the sound comes when the phase ends
+- [ ] Menu bar → Skip to Next Phase → the **focus** tone
+- [ ] Menu bar → End Focus → **no sound** (you ended it yourself)
+- [ ] Set a tone to None: that cue is silent, the other two still play
+- [ ] Turn sounds off, quit, reopen: still off, and the tones you chose are remembered
+
 **F-P1. Progress — Today**
 - [ ] Settings → Progress opens on **Today** by default, with a Today / Last 7 days picker
 - [ ] Water shows a volume against your goal (e.g. "1.5 L of 3 L") with a progress bar

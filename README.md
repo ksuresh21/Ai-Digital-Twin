@@ -61,9 +61,17 @@ name and your reminder intervals.
   **entire screen dims** with a large countdown in the middle of it, because a
   reminder you can dismiss in half a second does not make anyone rest their
   eyes. It is visual only — it never blocks a click or a keystroke.
-- **Posture.** She stretches, so you remember to.
+- **Posture.** She stands up and stretches every hour, so you remember to.
 
-Each one can be accepted or snoozed, and each has its own interval.
+Each one can be accepted or snoozed, and each has its own interval and its own
+on/off switch.
+
+**Sounds** live in General: one switch to silence the lot, and a choice of any
+of macOS's built-in alert tones for three moments — a reminder arriving, an eye
+break ending, and a focus phase ending. Picking a tone plays it, so you are not
+choosing between fourteen names you have never heard. The eye-break one earns
+its keep: your screen is dimmed and you are deliberately looking away, so a
+sound is the only way to be told the break is over.
 
 <p align="center">
   <img src="AiTwin/Resources/Screenshots/05-eyebreak-dimming.png" alt="Eye break dimming the screen with a countdown" width="640">

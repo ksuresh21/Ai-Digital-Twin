@@ -26,6 +26,7 @@ const state = {
   settings: null,
   listening: false,
   busy: false,
+  shownWarning: null,
 };
 
 /* ---------------------------------------------------------------- sprite */
@@ -311,7 +312,7 @@ function applyState(data) {
   $("voice-enabled").checked = s.voice.enabled;
   $("voice-rate").value = s.voice.rate;
   $("voice-volume").value = s.voice.volume;
-  $("quiet-hours").checked = s.voice.quiet_hours_enabled;
+  $("quiet-hours").checked = s.quiet_hours.enabled;
   const picker = $("voice-name");
   if (!picker.dataset.filled) {
     picker.innerHTML =
@@ -357,7 +358,13 @@ function applyState(data) {
     ? `This pack has no frames for: ${missing.join(", ")}. Those fall back to idle.`
     : "";
 
-  if (data.brain.warning) bubble("error", data.brain.warning);
+  // Once per distinct message. applyState runs after every settings change,
+  // so without this a bad API key stacked an identical error bubble each time
+  // you nudged the volume slider.
+  if (data.brain.warning && data.brain.warning !== state.shownWarning) {
+    state.shownWarning = data.brain.warning;
+    bubble("error", data.brain.warning);
+  }
   if (data.affect) showAffect(data.affect);
   playClip(state.clip in state.clips ? state.clip : "idle");
 }
@@ -390,7 +397,7 @@ function wire() {
   $("voice-name").onchange = (e) => patch({ voice: { name: e.target.value } });
   $("voice-rate").onchange = (e) => patch({ voice: { rate: +e.target.value } });
   $("voice-volume").onchange = (e) => patch({ voice: { volume: +e.target.value } });
-  $("quiet-hours").onchange = (e) => patch({ voice: { quiet_hours_enabled: e.target.checked } });
+  $("quiet-hours").onchange = (e) => patch({ quiet_hours: { enabled: e.target.checked } });
 
   $("ears-enabled").onchange = (e) => {
     patch({ ears: { enabled: e.target.checked } });

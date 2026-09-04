@@ -63,7 +63,7 @@ def consider(
 
     # 1. Quiet hours beat everything except an unlock greeting, which is a
     #    response to you arriving rather than an interruption of anything.
-    quiet = in_quiet_hours(settings.voice, clock.tm_hour, clock.tm_min)
+    quiet = in_quiet_hours(settings.quiet_hours, clock.tm_hour, clock.tm_min)
 
     # 2. Coming back to the machine. The one approach that is always welcome,
     #    because you just chose to be here.

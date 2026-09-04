@@ -119,6 +119,23 @@ The one real casualty is memory search. Keyword overlap genuinely cannot find
 in [ROADMAP.md](ROADMAP.md); it buys zero dependencies and offline operation,
 which for a few hundred notes is a fair trade.
 
+## Quiet hours is not a voice setting
+
+It reads like one, and it started as one. But `pulse.consider` uses it to
+decide whether she **approaches at all** — so a switch labelled "silent at
+night", sitting under Voice, also decided whether she could wander over at 3am
+with a speech bubble. Two behaviours behind one switch, and the label described
+only one of them.
+
+It is now `Settings.quiet_hours`, top level, and it means what it says: during
+the window she neither speaks nor appears. The one exception is an unlock
+greeting, which is a response to you arriving rather than an interruption of
+anything.
+
+Same shape and same algorithm as `QuietHours.swift`, so the two halves cannot
+disagree about when to shut up. A window saved under the old nested name is
+still read, so nobody's setting silently reverts.
+
 ## The art contract
 
 Frames live in `assets/characters/<Pack>/<Clip>/<prefix>_NN.png`, with clip

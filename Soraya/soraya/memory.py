@@ -68,8 +68,6 @@ class Note:
     # "fact" (they have a cat), "preference" (hates video calls),
     # "thread" (the migration at work), "promise" (said they'd call their mum).
     kind: str = "fact"
-    # Bumped whenever the note proves useful, so what matters surfaces.
-    uses: int = 0
 
 
 class Memory:
@@ -181,10 +179,16 @@ class Memory:
     def recall(self, query: str, limit: int = 4) -> list[str]:
         """The notes most likely to matter for this message.
 
-        Score is keyword overlap, nudged by recency and by how often a note has
-        been useful before. Notes with no overlap at all are excluded rather
-        than padded in — an irrelevant memory in the prompt is worse than a
-        short prompt, because she will find a way to mention it.
+        Score is keyword overlap nudged by recency. Notes with no overlap at
+        all are excluded rather than padded in — an irrelevant memory in the
+        prompt is worse than a short prompt, because she will find a way to
+        mention it.
+
+        There was a third term here — a `uses` counter meant to let notes that
+        keep proving useful float up. Nothing ever incremented it, so it
+        contributed exactly zero to every score while reading as though the
+        feature existed. Reinforcement-by-usage needs a store that can update a
+        record in place, and this one is append-only JSONL; see ROADMAP.md.
         """
         wanted = _tokens(query)
         if not wanted:
@@ -199,7 +203,7 @@ class Memory:
             # Halves roughly every three weeks: old facts still count, old
             # threads mostly should not.
             recency = 0.5 ** (age_days / 21)
-            scored.append((overlap + 0.5 * recency + 0.1 * note.uses, note.text))
+            scored.append((overlap + 0.5 * recency, note.text))
         scored.sort(reverse=True)
         return [text for _, text in scored[:limit]]
 

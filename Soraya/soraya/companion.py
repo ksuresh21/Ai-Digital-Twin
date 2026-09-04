@@ -76,7 +76,7 @@ class Companion:
         if not voice.enabled or not self._mac_speaker.available:
             return self._silent
         clock = time.localtime()
-        if in_quiet_hours(voice, clock.tm_hour, clock.tm_min):
+        if in_quiet_hours(self.settings.quiet_hours, clock.tm_hour, clock.tm_min):
             return self._silent
         return self._mac_speaker
 

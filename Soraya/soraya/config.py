@@ -20,6 +20,28 @@ HOME = Path(os.environ.get("SORAYA_HOME", Path.home() / ".soraya"))
 
 
 @dataclass
+class QuietHours:
+    """When she leaves you alone entirely.
+
+    Top-level rather than nested under `voice`, and that is a correction. It
+    started life as a voice setting, but `pulse.consider` reads it to decide
+    whether she *approaches at all* — so switching off a setting labelled
+    "silent at night" also gave her permission to wander over at 3am with a
+    speech bubble. Two different behaviours behind one switch, and the label
+    described only one of them.
+
+    Now it means what it says: during this window she neither speaks nor
+    appears. Same shape and same algorithm as `QuietHours.swift`, midnight
+    crossing included, so the Python and Swift halves cannot disagree about
+    when to shut up.
+    """
+
+    enabled: bool = True
+    start_minute: int = 22 * 60
+    end_minute: int = 7 * 60
+
+
+@dataclass
 class VoiceSettings:
     """Her voice. Off by default — see the note on `enabled`."""
 
@@ -33,11 +55,6 @@ class VoiceSettings:
     rate: int = 165
     # 0..1, applied by the player.
     volume: float = 0.8
-    # Never speak during these hours, even with voice on. Mirrors the Swift
-    # app's quiet hours so the two cannot disagree about when to shut up.
-    quiet_start_minute: int = 22 * 60
-    quiet_end_minute: int = 7 * 60
-    quiet_hours_enabled: bool = True
 
 
 @dataclass
@@ -96,6 +113,7 @@ class Settings:
     name: str = "Soraya"
     # What she calls you.
     user_name: str = ""
+    quiet_hours: QuietHours = field(default_factory=QuietHours)
     voice: VoiceSettings = field(default_factory=VoiceSettings)
     ears: EarsSettings = field(default_factory=EarsSettings)
     brain: BrainSettings = field(default_factory=BrainSettings)
@@ -136,6 +154,7 @@ class Settings:
                 continue
             value = raw[f.name]
             nested = {
+                "quiet_hours": QuietHours,
                 "voice": VoiceSettings,
                 "ears": EarsSettings,
                 "brain": BrainSettings,
@@ -149,6 +168,21 @@ class Settings:
                     )
                 continue
             kwargs[f.name] = value
+        # Quiet hours used to live inside `voice`. Read the old location when
+        # the new one is absent, so an existing settings file keeps the window
+        # somebody chose instead of silently reverting to 22:00-07:00.
+        legacy = raw.get("voice") if isinstance(raw.get("voice"), dict) else {}
+        if "quiet_hours" not in raw and legacy:
+            moved = {}
+            if "quiet_hours_enabled" in legacy:
+                moved["enabled"] = legacy["quiet_hours_enabled"]
+            if "quiet_start_minute" in legacy:
+                moved["start_minute"] = legacy["quiet_start_minute"]
+            if "quiet_end_minute" in legacy:
+                moved["end_minute"] = legacy["quiet_end_minute"]
+            if moved:
+                kwargs["quiet_hours"] = QuietHours(**moved)
+
         try:
             return cls(**kwargs)
         except TypeError:
@@ -168,16 +202,16 @@ def minute_of_day(hour: int, minute: int) -> int:
     return hour * 60 + minute
 
 
-def in_quiet_hours(voice: VoiceSettings, hour: int, minute: int) -> bool:
-    """Whether the clock is inside the do-not-speak window.
+def in_quiet_hours(quiet: QuietHours, hour: int, minute: int) -> bool:
+    """Whether the clock is inside the leave-me-alone window.
 
     Ported deliberately from `QuietHours.swift`, including the case a naive
     `start <= t < end` gets wrong: a window that crosses midnight (22:00 to
     07:00), which is the common one.
     """
-    if not voice.quiet_hours_enabled:
+    if not quiet.enabled:
         return False
-    start, end = voice.quiet_start_minute, voice.quiet_end_minute
+    start, end = quiet.start_minute, quiet.end_minute
     if start == end:
         # An empty window silences nothing. Treating it as "always quiet" would
         # let one mis-set number mute her forever.

@@ -45,7 +45,7 @@ class OpenAICompatBrain:
         self.timeout = timeout
         self.last_reply = Reply()
 
-    def _post(self, payload: dict, *, stream: bool):
+    def _post(self, payload: dict):
         request = urllib.request.Request(
             f"{self.base_url}/chat/completions",
             data=json.dumps(payload).encode(),
@@ -86,7 +86,7 @@ class OpenAICompatBrain:
             payload["temperature"] = self.temperature
 
         collected: list[str] = []
-        with self._post(payload, stream=True) as response:
+        with self._post(payload) as response:
             for raw in response:
                 line = raw.decode("utf-8", errors="replace").strip()
                 if not line.startswith("data:"):
@@ -122,7 +122,7 @@ class OpenAICompatBrain:
             "temperature": 0,
             "stream": False,
         }
-        with self._post(payload, stream=False) as response:
+        with self._post(payload) as response:
             body = json.loads(response.read().decode())
         choices = body.get("choices") or [{}]
         return ((choices[0].get("message") or {}).get("content")) or ""

@@ -100,6 +100,15 @@ Once the SDK is on 1.x, replace the client-side retry with the real
   The interface says so rather than failing silently.
 - **Note deduplication is biased toward not storing.** A richer restatement of
   a known fact can be dropped. That is the cheaper mistake.
+- **Notes have no usage reinforcement.** A `uses` counter was written into the
+  recall score and nothing ever incremented it, so it contributed zero while
+  reading as though the feature existed; it has been removed rather than left
+  in as decoration. Doing it properly needs a store that can update a record in
+  place, and `notes.jsonl` is append-only.
+- **One `Companion` is shared across server threads.** Fine for one person in
+  one tab, which is the only case that exists today. Two tabs sending at once
+  could interleave writes to `turns.jsonl` and race `last_affect`. A lock
+  around `respond` is the fix if it ever matters.
 - **Only the last 12 turns reach the prompt.** Deliberate — a companion shaped
   by a 200-turn history starts repeating old moods back at you — but it means
   she genuinely forgets the middle of a long session.

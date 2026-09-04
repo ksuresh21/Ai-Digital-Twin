@@ -24,7 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from soraya import emotion, persona, pulse
 from soraya.brain.echo import EchoBrain
 from soraya.companion import Companion, _first_json_array, _first_json_object
-from soraya.config import Settings, VoiceSettings, in_quiet_hours
+from soraya.config import QuietHours, Settings, VoiceSettings, in_quiet_hours
 from soraya.memory import Memory, Turn
 from soraya.presence.sprite import CLIPS, Sprite, clip_for
 from soraya.voice.base import speech_text
@@ -79,21 +79,51 @@ class TestQuietHours:
     """Ported from the Swift app, including the case it exists to get right."""
 
     def test_the_window_crossing_midnight_is_quiet_at_both_ends(self):
-        voice = VoiceSettings()  # 22:00 -> 07:00
-        assert in_quiet_hours(voice, 23, 0)
-        assert in_quiet_hours(voice, 3, 0)
-        assert in_quiet_hours(voice, 6, 59)
-        assert not in_quiet_hours(voice, 7, 0)
-        assert not in_quiet_hours(voice, 12, 0)
+        quiet = QuietHours()  # 22:00 -> 07:00
+        assert in_quiet_hours(quiet, 23, 0)
+        assert in_quiet_hours(quiet, 3, 0)
+        assert in_quiet_hours(quiet, 6, 59)
+        assert not in_quiet_hours(quiet, 7, 0)
+        assert not in_quiet_hours(quiet, 12, 0)
 
     def test_an_empty_window_silences_nothing(self):
         # Otherwise one mis-set number mutes her forever.
-        voice = VoiceSettings(quiet_start_minute=600, quiet_end_minute=600)
-        assert not in_quiet_hours(voice, 10, 0)
+        assert not in_quiet_hours(
+            QuietHours(start_minute=600, end_minute=600), 10, 0)
 
     def test_disabled_means_disabled(self):
-        voice = VoiceSettings(quiet_hours_enabled=False)
-        assert not in_quiet_hours(voice, 23, 0)
+        assert not in_quiet_hours(QuietHours(enabled=False), 23, 0)
+
+    def test_it_is_not_a_voice_setting(self):
+        # It gates whether she *appears*, not only whether she speaks, so it
+        # cannot live behind the voice switch. Turning the voice off must not
+        # give her permission to wander over at 3am.
+        settings = Settings()
+        settings.voice.enabled = False
+        assert settings.quiet_hours.enabled
+        now = time.mktime(time.strptime("2026-09-03 03:00", "%Y-%m-%d %H:%M"))
+        approach = pulse.consider(settings, now=now,
+                                  last_spoke_at=now - 99999, roll=0.0)
+        assert not approach.should
+        assert approach.reason == "quiet hours"
+
+    def test_a_window_saved_under_the_old_name_is_carried_over(self):
+        # Quiet hours used to be nested inside `voice`. Somebody who set a
+        # window there must keep it rather than silently reverting to 22:00.
+        loaded = Settings.from_dict({
+            "voice": {"quiet_hours_enabled": True,
+                      "quiet_start_minute": 23 * 60,
+                      "quiet_end_minute": 6 * 60},
+        })
+        assert loaded.quiet_hours.start_minute == 23 * 60
+        assert loaded.quiet_hours.end_minute == 6 * 60
+
+    def test_the_new_name_wins_over_the_old_one(self):
+        loaded = Settings.from_dict({
+            "quiet_hours": {"start_minute": 21 * 60},
+            "voice": {"quiet_start_minute": 23 * 60},
+        })
+        assert loaded.quiet_hours.start_minute == 21 * 60
 
 
 # ------------------------------------------------------------------ emotion
@@ -252,6 +282,15 @@ class TestMemory:
             handle.write('{"role": "user", "text": "trunca')
         # One bad line must cost one line, not the whole history.
         assert [t.text for t in memory.recent_turns()] == ["intact"]
+
+    def test_recall_scores_on_overlap_and_recency_only(self, home: Path):
+        # A `uses` counter used to be in this score and nothing ever
+        # incremented it, so it contributed zero while looking like a feature.
+        from dataclasses import fields as dataclass_fields
+
+        from soraya.memory import Note
+
+        assert "uses" not in {f.name for f in dataclass_fields(Note)}
 
     def test_forget_all_actually_removes_the_files(self, home: Path):
         memory = Memory(home)
@@ -422,6 +461,15 @@ class TestSpeechText:
     def test_a_short_reply_is_left_alone(self):
         assert speech_text("Still here.") == "Still here."
 
+    def test_her_own_words_cannot_drive_her_voice(self):
+        # macOS `say` parses [[...]] as an embedded speech command -- verified:
+        # rendering "hello [[rate 500]] world" produces 28% less audio than
+        # "hello world". Since the volume is passed as exactly such a command,
+        # an unstripped [[ in a reply could change her rate or volume.
+        assert speech_text("Hello [[rate 500]] there") == "Hello there"
+        assert "[[" not in speech_text("Unpaired [[ bracket")
+        assert "]]" not in speech_text("Trailing ]] bracket")
+
 
 # ------------------------------------------------------------------- sprite
 
@@ -515,6 +563,7 @@ class TestATurn:
     def test_quiet_hours_silence_her_even_with_voice_on(self, her: Companion,
                                                         monkeypatch):
         her.settings.voice.enabled = True
+        her.settings.quiet_hours.enabled = True
         monkeypatch.setattr(
             time, "localtime",
             lambda *a: time.struct_time((2026, 9, 3, 23, 30, 0, 3, 246, 0)),

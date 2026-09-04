@@ -55,10 +55,21 @@ def speech_text(reply: str, limit: int = 320) -> str:
     Written text and spoken text are not the same thing. Markdown read aloud
     is gibberish, and a long paragraph that is fine to skim is interminable to
     listen to — so the voice gets the first few sentences, cleaned.
+
+    This also strips `[[...]]`, which is not cosmetic. macOS `say` parses that
+    as an embedded speech command, and it is verifiable: rendering
+    "hello [[rate 500]] world" produces 28% less audio than "hello world"
+    because the command was obeyed rather than spoken. Since the volume is
+    passed to `say` as exactly such a command, a reply containing `[[` could
+    change her rate, pitch or volume mid-sentence — her own output steering her
+    own voice.
     """
     import re
 
     text = reply.strip()
+    text = re.sub(r"\[\[.*?\]\]", " ", text, flags=re.DOTALL)
+    # Any unpaired brackets left over would still open a command.
+    text = text.replace("[[", " ").replace("]]", " ")
     # Strip the markdown she is told not to use but may produce anyway.
     text = re.sub(r"[*_`#>]+", "", text)
     text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)

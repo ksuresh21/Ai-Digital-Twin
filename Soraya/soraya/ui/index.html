@@ -83,8 +83,6 @@
             <input type="range" id="voice-rate" min="110" max="260" step="5"></label>
           <label class="field-row">Volume
             <input type="range" id="voice-volume" min="0" max="1" step="0.05"></label>
-          <label class="field-row">Silent at night
-            <input type="checkbox" id="quiet-hours"></label>
           <p class="hint">Uses the voices macOS already has. Nothing is
             downloaded and nothing is sent anywhere to make her speak.</p>
         </fieldset>
@@ -133,8 +131,11 @@
             <input type="number" id="min-gap" min="1" max="600" step="5"> min</label>
           <label class="field-row">Say hello on unlock
             <input type="checkbox" id="greet-unlock"></label>
+          <label class="field-row">Leave me alone at night
+            <input type="checkbox" id="quiet-hours"></label>
           <p class="hint">The gap is a hard floor. However she is feeling, she
-            will not come over more often than this.</p>
+            will not come over more often than this. At night she neither
+            speaks nor appears — an unlock greeting is the one exception.</p>
         </fieldset>
 
         <fieldset>

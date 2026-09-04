@@ -1,0 +1,26 @@
+# Her memories and settings live in ~/.soraya, but if SORAYA_HOME is pointed
+# in here they must never be committed. This is somebody's private
+# conversation history.
+.soraya/
+*.jsonl
+settings.json
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# Rendered speech and scratch output
+*.aiff
+*.wav
+.work/
+
+# macOS
+.DS_Store

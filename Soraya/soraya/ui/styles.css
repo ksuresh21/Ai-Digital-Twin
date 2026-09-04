@@ -1,0 +1,210 @@
+/* Blue and white, per the brief. A palette of our own -- no company's actual
+   marks, logo or exact brand values are used anywhere in this project. */
+:root {
+  --ink:            #0f1b2d;
+  --ink-soft:       #4a5b73;
+  --ink-faint:      #8697ad;
+  --paper:          #ffffff;
+  --paper-tint:     #f4f8fd;
+  --paper-edge:     #e2ebf6;
+  --blue:           #1668c7;
+  --blue-deep:      #0d4c98;
+  --blue-wash:      #e8f1fc;
+  --blue-line:      #bcd8f5;
+  --warm:           #b9531f;   /* only for warnings */
+  --good:           #1c7a54;
+  --radius:         10px;
+  --shadow:         0 1px 2px rgba(15, 27, 45, .06), 0 8px 24px rgba(15, 27, 45, .06);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--paper-tint);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- shell ------------------------------------------------------------- */
+
+.shell {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 18px;
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 20px;
+  min-height: 100vh;
+}
+@media (max-width: 860px) {
+  .shell { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--paper);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* ---- her side ---------------------------------------------------------- */
+
+.stage { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand .dot {
+  width: 30px; height: 30px; border-radius: 9px;
+  background: linear-gradient(150deg, var(--blue) 0%, var(--blue-deep) 100%);
+  display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 14px;
+}
+.brand h1 { font-size: 15px; margin: 0; font-weight: 650; letter-spacing: -.01em; }
+.brand .sub { font-size: 11.5px; color: var(--ink-faint); }
+
+.portrait {
+  position: relative;
+  background:
+    radial-gradient(120% 80% at 50% 100%, var(--blue-wash) 0%, var(--paper) 70%);
+  border: 1px solid var(--paper-edge);
+  border-radius: var(--radius);
+  height: 272px;
+  display: grid; place-items: end center;
+  overflow: hidden;
+}
+.portrait img {
+  /* Pixels, not percentages. A percentage max-height here did not resolve
+     against the grid area and she rendered at her natural 368px inside a
+     272px box -- which cropped her legs off and looked like broken art
+     rather than a broken rule. */
+  max-height: 240px;
+  width: auto;
+  object-fit: contain;
+  image-rendering: pixelated;   /* she is pixel art; never smooth her */
+  display: block;
+}
+.portrait .empty {
+  align-self: center; text-align: center; padding: 0 22px;
+  font-size: 12px; color: var(--ink-faint);
+}
+.portrait .clip {
+  position: absolute; top: 8px; left: 10px;
+  font: 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--blue-deep); background: rgba(255,255,255,.82);
+  border: 1px solid var(--blue-line); border-radius: 5px; padding: 4px 6px;
+}
+
+/* mood strip */
+.mood { display: flex; flex-direction: column; gap: 7px; }
+.mood .row { display: flex; align-items: baseline; justify-content: space-between; }
+.mood .label { font-weight: 600; font-size: 13px; }
+.mood .posture {
+  font: 10px/1 ui-monospace, Menlo, monospace; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--blue-deep);
+  background: var(--blue-wash); border-radius: 4px; padding: 4px 6px;
+}
+.meter { height: 5px; background: var(--paper-edge); border-radius: 3px; overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--blue); width: 0; transition: width .35s ease; }
+.mood .axis { font-size: 11px; color: var(--ink-faint); display: flex; justify-content: space-between; }
+.mood .why { font-size: 11.5px; color: var(--ink-soft); font-style: italic; min-height: 1.2em; }
+
+/* ---- conversation ------------------------------------------------------ */
+
+.talk { display: flex; flex-direction: column; min-height: 0; }
+.log {
+  flex: 1; overflow-y: auto; padding: 18px 18px 6px;
+  display: flex; flex-direction: column; gap: 12px;
+  min-height: 320px; max-height: calc(100vh - 210px);
+}
+.log:empty::after {
+  content: "She is here. Say something, or press Come over and let her start.";
+  margin: auto; max-width: 32ch; text-align: center;
+  color: var(--ink-faint); font-size: 12.5px;
+}
+.bubble { max-width: 76%; padding: 9px 13px; border-radius: 13px; white-space: pre-wrap; }
+.bubble.them {
+  align-self: flex-end; background: var(--blue); color: #fff;
+  border-bottom-right-radius: 4px;
+}
+.bubble.her {
+  align-self: flex-start; background: var(--paper-tint);
+  border: 1px solid var(--paper-edge); border-bottom-left-radius: 4px;
+}
+.bubble.her.thinking { color: var(--ink-faint); font-style: italic; }
+.bubble.note {
+  align-self: center; max-width: 92%; text-align: center;
+  font-size: 11.5px; color: var(--ink-faint); background: none; padding: 2px;
+}
+.bubble.error {
+  align-self: center; max-width: 92%; font-size: 12px;
+  color: var(--warm); background: #fdf4ee; border: 1px solid #f3ddcd;
+}
+.sources { font-size: 11.5px; margin-top: 7px; padding-top: 7px; border-top: 1px solid var(--paper-edge); }
+.sources a { color: var(--blue-deep); text-decoration: none; }
+.sources a:hover { text-decoration: underline; }
+
+/* ---- composer ---------------------------------------------------------- */
+
+.composer { border-top: 1px solid var(--paper-edge); padding: 12px 14px; }
+.composer .field { display: flex; gap: 8px; align-items: flex-end; }
+textarea {
+  flex: 1; resize: none; font: inherit; color: inherit;
+  padding: 9px 11px; min-height: 40px; max-height: 132px;
+  border: 1px solid var(--blue-line); border-radius: 9px; background: var(--paper);
+}
+textarea:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+
+button {
+  font: inherit; font-weight: 550; cursor: pointer;
+  border-radius: 8px; padding: 9px 14px;
+  border: 1px solid var(--blue-line); background: var(--paper); color: var(--blue-deep);
+}
+button:hover:not(:disabled) { background: var(--blue-wash); }
+button.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+button.primary:hover:not(:disabled) { background: var(--blue-deep); }
+button:disabled { opacity: .45; cursor: default; }
+button.mic { padding: 9px 11px; line-height: 0; }
+button.mic svg { width: 16px; height: 16px; display: block; }
+button.mic.on { background: var(--warm); border-color: var(--warm); color: #fff; }
+button.mic.on svg { stroke: #fff; }
+
+.composer .tools {
+  display: flex; gap: 7px; align-items: center;
+  margin-top: 9px; font-size: 11.5px; color: var(--ink-faint); flex-wrap: wrap;
+}
+.composer .tools .spacer { flex: 1; }
+.chip {
+  border: 1px solid var(--paper-edge); border-radius: 999px;
+  padding: 3px 9px; font-size: 11px; background: var(--paper-tint);
+}
+.chip.live { border-color: var(--blue-line); color: var(--blue-deep); background: var(--blue-wash); }
+
+/* ---- settings ---------------------------------------------------------- */
+
+details.settings { border-top: 1px solid var(--paper-edge); }
+details.settings > summary {
+  padding: 11px 16px; cursor: pointer; font-weight: 600; font-size: 13px;
+  color: var(--blue-deep); list-style: none;
+}
+details.settings > summary::-webkit-details-marker { display: none; }
+details.settings > summary::before { content: "⌄  "; }
+details[open].settings > summary::before { content: "⌃  "; }
+.settings .grid {
+  padding: 4px 16px 16px; display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+fieldset {
+  border: 1px solid var(--paper-edge); border-radius: 9px; padding: 11px 13px 13px; margin: 0;
+}
+legend { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); padding: 0 5px; }
+.field-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 7px 0; font-size: 12.5px; }
+.field-row select, .field-row input[type="text"], .field-row input[type="number"] {
+  font: inherit; font-size: 12px; padding: 4px 6px; max-width: 130px;
+  border: 1px solid var(--blue-line); border-radius: 6px; background: var(--paper); color: inherit;
+}
+.field-row input[type="range"] { max-width: 110px; accent-color: var(--blue); }
+.field-row input[type="checkbox"] { accent-color: var(--blue); width: 15px; height: 15px; }
+.hint { font-size: 11px; color: var(--ink-faint); margin: 5px 0 0; }
+.warn { font-size: 11.5px; color: var(--warm); margin: 6px 0 0; }

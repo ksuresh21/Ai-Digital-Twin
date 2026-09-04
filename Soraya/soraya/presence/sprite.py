@@ -1,0 +1,131 @@
+"""Which drawing of her to show.
+
+The folder names here are the same ones `AiTwin/Resources/Characters/<Name>/`
+already uses — Idle, Waving, Walking, Concerned, Cheer and so on — so a pack
+generated for the Swift app drops straight in here, and anything drawn for here
+drops straight into the Swift app. That is not a coincidence, it is the point:
+one set of art, two consumers.
+
+Four folders are new, because a companion who talks needs states a reminder
+companion never did: Talking, Listening, Thinking, Greeting.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from pathlib import Path
+
+#: clip name -> (folder, file prefix, loops). Mirrors `ClipName.swift`.
+CLIPS: dict[str, tuple[str, str, bool]] = {
+    # Shared with the Swift app.
+    "idle": ("Idle", "idle", True),
+    "walk": ("Walking", "walk", True),
+    "wave": ("Waving", "wave", False),
+    "concerned": ("Concerned", "concerned", True),
+    "cheer": ("Cheer", "cheer", False),
+    "happy": ("HappyMood", "happy", False),
+    "peek": ("Peek", "peek", True),
+    "sleep": ("Sleep", "sleep", True),
+    "yawn": ("Yawn", "yawn", False),
+    "focus": ("Focus", "focus", True),
+    "sitting": ("Sitting", "sitting", True),
+    "stretch": ("Stretch", "stretch", True),
+    # New for the conversational phase.
+    "talking": ("Talking", "talk", True),
+    "listening": ("Listening", "listen", True),
+    "thinking": ("Thinking", "think", True),
+    "greeting": ("Greeting", "greet", False),
+}
+
+#: posture -> clip. The postures come from `emotion.POSTURES`; keeping the
+#: mapping here rather than in the emotion module means how she *looks* can be
+#: retuned without touching how she *decides*.
+POSTURE_CLIPS: dict[str, str] = {
+    "retreat": "idle",
+    "hold": "concerned",
+    "ground": "concerned",
+    "support": "concerned",
+    "lift": "idle",
+    "celebrate": "cheer",
+    "answer": "talking",
+    "banter": "talking",
+}
+
+
+def clip_for(posture: str, *, state: str = "reply") -> str:
+    """The clip for a posture at a moment in the exchange.
+
+    `state` is where we are in the turn: "listening" while you type or speak,
+    "thinking" while the model works, "reply" once she has words. The posture
+    only gets a say in the last of those — she should not look concerned before
+    she has heard you.
+    """
+    if state == "listening":
+        return "listening"
+    if state == "thinking":
+        return "thinking"
+    if state == "greeting":
+        return "greeting"
+    return POSTURE_CLIPS.get(posture, "talking")
+
+
+@dataclass
+class Sprite:
+    """A character pack on disk, resolved to frame paths."""
+
+    root: Path
+
+    @property
+    def name(self) -> str:
+        return self.root.name
+
+    def frames(self, clip: str) -> list[Path]:
+        """Every frame of a clip, in order, or [] if the clip is missing.
+
+        Sorted numerically rather than lexically. Lexical sort puts frame 10
+        before frame 2, which is a bug that looks like bad animation rather
+        than like a sorting mistake, so it survives for ages.
+        """
+        entry = CLIPS.get(clip)
+        if entry is None:
+            return []
+        folder, prefix, _ = entry
+        directory = self.root / folder
+        if not directory.is_dir():
+            return []
+        found = [
+            path for path in directory.iterdir()
+            if path.suffix.lower() == ".png" and not path.name.startswith(".")
+        ]
+
+        def order(path: Path) -> tuple[int, str]:
+            digits = re.findall(r"(\d+)", path.stem)
+            return (int(digits[-1]) if digits else 0, path.name)
+
+        return sorted(found, key=order)
+
+    def resolve(self, clip: str) -> tuple[str, list[Path]]:
+        """The clip if it has frames, else idle. Returns what was actually used.
+
+        Falling back silently is right — a pack missing `Thinking` should still
+        work — but the caller is told which clip it got so the interface can
+        say "this pack has no Thinking frames" rather than leaving someone
+        wondering why she never changes pose.
+        """
+        frames = self.frames(clip)
+        if frames:
+            return clip, frames
+        return ("idle", self.frames("idle")) if clip != "idle" else ("idle", [])
+
+    def missing_clips(self) -> list[str]:
+        return [name for name in CLIPS if not self.frames(name)]
+
+    def manifest(self) -> dict[str, list[str]]:
+        """clip -> web-relative frame paths, for the browser to preload."""
+        out: dict[str, list[str]] = {}
+        for clip in CLIPS:
+            frames = self.frames(clip)
+            if frames:
+                out[clip] = [f"{self.name}/{p.parent.name}/{p.name}" for p in frames]
+        return out

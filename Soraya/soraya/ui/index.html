@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Soraya</title>
+<link rel="stylesheet" href="/ui/styles.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ---------------- her side ---------------- -->
+  <aside class="panel stage">
+    <div class="brand">
+      <div class="dot">S</div>
+      <div>
+        <h1 id="her-name">Soraya</h1>
+        <div class="sub" id="brain-line">starting…</div>
+      </div>
+    </div>
+
+    <div class="portrait">
+      <span class="clip" id="clip-name">idle</span>
+      <img id="sprite" alt="" hidden>
+      <div class="empty" id="sprite-empty">
+        No frames yet. Drop PNGs into
+        <code>assets/characters/Soraya/&lt;Clip&gt;/</code>
+        — the placeholders are there to be replaced.
+      </div>
+    </div>
+
+    <div class="mood">
+      <div class="row">
+        <span class="label" id="mood-label">—</span>
+        <span class="posture" id="mood-posture">waiting</span>
+      </div>
+      <div class="meter"><i id="meter-valence"></i></div>
+      <div class="axis"><span>low</span><span>how it's going</span><span>good</span></div>
+      <div class="meter"><i id="meter-arousal"></i></div>
+      <div class="axis"><span>flat</span><span>energy</span><span>wired</span></div>
+      <div class="why" id="mood-why"></div>
+    </div>
+
+    <p class="hint" id="pack-warning"></p>
+  </aside>
+
+  <!-- ---------------- conversation ---------------- -->
+  <main class="panel talk">
+    <div class="log" id="log"></div>
+
+    <div class="composer">
+      <div class="field">
+        <textarea id="input" rows="1" placeholder="Say something to her…"></textarea>
+        <button class="mic" id="mic" title="Talk instead of typing" aria-label="Talk instead of typing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z"/>
+            <path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>
+          </svg>
+        </button>
+        <button class="primary" id="send">Send</button>
+      </div>
+      <div class="tools">
+        <button id="look-up" title="She searches the web before answering">Look it up</button>
+        <button id="come-over" title="Make her approach unprompted">Come over</button>
+        <span class="spacer"></span>
+        <span class="chip" id="voice-chip">voice off</span>
+        <span class="chip" id="heard-chip" hidden></span>
+      </div>
+    </div>
+
+    <details class="settings">
+      <summary>Settings</summary>
+      <div class="grid">
+
+        <fieldset>
+          <legend>Voice</legend>
+          <label class="field-row">Speak out loud
+            <input type="checkbox" id="voice-enabled"></label>
+          <label class="field-row">Voice
+            <select id="voice-name"></select></label>
+          <label class="field-row">Speed
+            <input type="range" id="voice-rate" min="110" max="260" step="5"></label>
+          <label class="field-row">Volume
+            <input type="range" id="voice-volume" min="0" max="1" step="0.05"></label>
+          <label class="field-row">Silent at night
+            <input type="checkbox" id="quiet-hours"></label>
+          <p class="hint">Uses the voices macOS already has. Nothing is
+            downloaded and nothing is sent anywhere to make her speak.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Ears</legend>
+          <label class="field-row">Listen for my voice
+            <input type="checkbox" id="ears-enabled"></label>
+          <label class="field-row">Wake phrases
+            <input type="text" id="wake-phrases" placeholder="hey soraya, soraya come back"></label>
+          <p class="hint">Recognition runs in this browser, not on a server.
+            Say a wake phrase and she answers; the rest is ignored.</p>
+          <p class="warn" id="ears-warning"></p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Mind</legend>
+          <label class="field-row">Provider
+            <select id="brain-provider">
+              <option value="claude">Claude (API)</option>
+              <option value="openai_compat">Local / OpenAI-compatible</option>
+              <option value="echo">Echo (offline, no model)</option>
+            </select></label>
+          <label class="field-row">Model
+            <input type="text" id="brain-model"></label>
+          <label class="field-row">Local server
+            <input type="text" id="brain-base-url"></label>
+          <label class="field-row">Effort
+            <select id="brain-effort">
+              <option>low</option><option>medium</option>
+              <option>high</option><option>xhigh</option>
+            </select></label>
+          <p class="hint">Conversation runs at medium; looking things up runs
+            higher. Effort trades cost against thoroughness.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>Presence</legend>
+          <label class="field-row">Initiative
+            <select id="initiative">
+              <option value="quiet">Quiet</option>
+              <option value="normal">Normal</option>
+              <option value="lively">Lively</option>
+            </select></label>
+          <label class="field-row">Never sooner than
+            <input type="number" id="min-gap" min="1" max="600" step="5"> min</label>
+          <label class="field-row">Say hello on unlock
+            <input type="checkbox" id="greet-unlock"></label>
+          <p class="hint">The gap is a hard floor. However she is feeling, she
+            will not come over more often than this.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>You</legend>
+          <label class="field-row">Your name
+            <input type="text" id="user-name" placeholder="optional"></label>
+          <label class="field-row">Character pack
+            <select id="pack"></select></label>
+          <div class="field-row" style="justify-content:flex-start;gap:7px">
+            <button id="show-notes">What she remembers</button>
+            <button id="forget">Forget everything</button>
+          </div>
+          <p class="hint">Everything she knows lives in
+            <code>~/.soraya/</code> on this machine. Nothing syncs.</p>
+        </fieldset>
+
+      </div>
+    </details>
+  </main>
+</div>
+<script src="/ui/app.js"></script>
+</body>
+</html>

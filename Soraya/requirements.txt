@@ -1,0 +1,15 @@
+# Soraya runs on the standard library. This file is short on purpose.
+#
+# NOT used, deliberately: fastapi, uvicorn, pydantic, flask, openai,
+# websockets, numpy. The server is http.server, the local-model client is
+# urllib, speech recognition is the browser's, and speech synthesis is the
+# `say` command macOS already has. See ARCHITECTURE.md § Dependencies.
+
+# Only needed for brain.provider = "claude". Everything else works without it.
+anthropic>=0.40
+
+# Only needed to draw the placeholder character frames once.
+pillow>=9
+
+# Only needed to run the tests.
+pytest>=7

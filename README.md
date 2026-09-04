@@ -52,6 +52,19 @@ name and your reminder intervals.
 
 ## What it does
 
+### Soraya — the talking half (in progress)
+
+`Soraya/` is a separate, standalone project: the mind, voice and ears the
+desktop character does not have. She reads how you are doing on two axes,
+picks one of eight response postures, speaks with macOS's own voices, listens
+for "Hey Soraya", remembers durable facts, comes over unprompted on a leash,
+and can look things up on the web. The model is swappable — Claude, any local
+model over an OpenAI-compatible endpoint, or an offline stub that needs no key.
+
+It runs on its own today (`cd Soraya && ./run.sh --offline`) and is designed to
+wire into this app over one local HTTP seam. Start at
+[Soraya/README.md](Soraya/README.md).
+
 ### Reminders
 
 - **Water.** She walks over with a glass. Tracked in millilitres against a daily

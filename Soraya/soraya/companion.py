@@ -26,10 +26,13 @@ from .brain import BrainUnavailable
 from .brain.registry import build_brain_or_echo
 from .config import HOME, Settings, in_quiet_hours
 from .memory import Memory, Turn
-from .presence.sprite import Sprite, clip_for
+from .presence.sprite import Sprite, available_packs, clip_for, find_pack
 from .voice.base import SilentSpeaker, speech_text
 from .voice.tts_macos import MacSpeaker
 
+#: Kept for anything that still wants the local pack folder by name. Pack
+#: *lookup* goes through `find_pack`, which also searches the Swift app's
+#: character folders — see presence/sprite.py § PACK_ROOTS.
 ASSETS = Path(__file__).resolve().parent.parent / "assets" / "characters"
 
 # She is asked to note what is worth keeping *after* she has replied, so it
@@ -82,6 +85,23 @@ class Companion:
 
     @property
     def sprite(self) -> Sprite:
+        """The configured pack, or the best available one if it has gone.
+
+        A pack can disappear between runs — renamed, moved, or the settings
+        file names one from another machine. Falling back to something real
+        beats rendering an empty box, and the interface reports which pack it
+        actually used.
+        """
+        # "Soraya" second on purpose: the placeholder pack is the only one
+        # guaranteed to have frames for all sixteen clips, so it is a better
+        # fallback than whichever pack happens to sort first.
+        for name in (self.settings.character_pack, "Soraya"):
+            found = find_pack(name)
+            if found is not None:
+                return Sprite(found)
+        packs = available_packs()
+        if packs:
+            return Sprite(packs[0][1])
         return Sprite(ASSETS / self.settings.character_pack)
 
     def apply(self, settings: Settings) -> None:

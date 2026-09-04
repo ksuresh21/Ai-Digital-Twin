@@ -138,9 +138,27 @@ still read, so nobody's setting silently reverts.
 
 ## The art contract
 
-Frames live in `assets/characters/<Pack>/<Clip>/<prefix>_NN.png`, with clip
-names and folders from `presence/sprite.py` — the same ones
+Frames live in `<root>/<Pack>/<Clip>/<prefix>_NN.png`, with clip names and
+folders from `presence/sprite.py` — the same ones
 `AiTwin/Sources/AiTwinCore/ClipName.swift` already uses.
+
+`PACK_ROOTS` is what makes "one set of art, two consumers" real rather than
+aspirational: it lists this folder's `assets/characters/` *and* the Swift app's
+`Resources/Characters/`, searched in order, first match winning. The Swift
+app's packs are read in place — copying them would mean 11MB duplicated and two
+folders to keep in step. `find_pack` rejects any name containing a path
+separator, because pack names arrive from settings files and from the browser,
+and `/art/` resolves the pack first and then checks containment against *that*
+pack's directory rather than one fixed root.
+
+Because those packs predate the conversational clips, `FALLBACKS` gives each
+clip a chain rather than collapsing everything to `idle`. Blanket-idle was the
+first version and it wasted the pack: all four of `talking`, `listening`,
+`thinking` and `greeting` were missing on `Nish`, so she stood perfectly still
+through an entire exchange. Now `greeting` plays her real Waving frames and
+`thinking` plays Focus. `manifest()` resolves the chain server-side so the rules
+live in one language, and `substitutions()` reports what is really playing so
+the interface can say so.
 
 Three rules, in order of how badly breaking them hurts:
 

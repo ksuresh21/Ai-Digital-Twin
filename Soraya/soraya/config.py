@@ -118,8 +118,12 @@ class Settings:
     ears: EarsSettings = field(default_factory=EarsSettings)
     brain: BrainSettings = field(default_factory=BrainSettings)
     presence: PresenceSettings = field(default_factory=PresenceSettings)
-    # Which folder under assets/characters/ to draw from.
-    character_pack: str = "Soraya"
+    # Which pack to draw from. Looked up across every root in
+    # presence/sprite.py § PACK_ROOTS, which includes the Swift app's own
+    # character folders — so the default is the real character rather than the
+    # placeholders. If it is ever missing, the placeholder pack is the
+    # fallback, because it is the only one guaranteed to have all 16 clips.
+    character_pack: str = "Nish"
 
     # ---- persistence -------------------------------------------------------
 

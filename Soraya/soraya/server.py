@@ -25,7 +25,8 @@ from pathlib import Path
 from urllib.parse import unquote, urlparse
 
 from .agent.research import research
-from .companion import ASSETS, Companion
+from .companion import Companion
+from .presence.sprite import available_packs, find_pack
 from .config import Settings
 from .voice.wake import WakeMatcher
 
@@ -71,6 +72,26 @@ class Handler(BaseHTTPRequestHandler):
             return {}
         return parsed if isinstance(parsed, dict) else {}
 
+    def _art(self, relative: str) -> None:
+        """Serves `/art/<pack>/<Clip>/<frame>.png` from whichever root holds it.
+
+        Packs live in more than one place now — this folder's own assets and the
+        Swift app's `Resources/Characters` — so the containment check is against
+        the *resolved pack directory*, not one fixed assets root. Resolving the
+        pack by name first also means a traversal in the pack segment cannot
+        reach outside a root: `find_pack` rejects any name containing a
+        separator.
+        """
+        parts = relative.split("/", 1)
+        if len(parts) != 2:
+            self._json({"error": "not found"}, 404)
+            return
+        pack_dir = find_pack(parts[0])
+        if pack_dir is None:
+            self._json({"error": "no such pack"}, 404)
+            return
+        self._file(pack_dir / parts[1], pack_dir)
+
     def _file(self, path: Path, root: Path) -> None:
         """Serves a file, refusing anything that escapes `root`.
 
@@ -100,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
         elif route.startswith("/ui/"):
             self._file(UI / route[4:], UI)
         elif route.startswith("/art/"):
-            self._file(ASSETS / route[5:], ASSETS)
+            self._art(route[5:])
         elif route == "/api/state":
             self._json(self._state())
         elif route == "/api/notes":
@@ -180,9 +201,8 @@ class Handler(BaseHTTPRequestHandler):
                 "pack": sprite.name,
                 "clips": sprite.manifest(),
                 "missing": sprite.missing_clips(),
-                "packs": sorted(
-                    p.name for p in ASSETS.iterdir() if p.is_dir()
-                ) if ASSETS.is_dir() else [],
+                "substitutions": sprite.substitutions(),
+                "packs": [name for name, _ in available_packs()],
             },
             "affect": asdict(companion.last_affect),
         }

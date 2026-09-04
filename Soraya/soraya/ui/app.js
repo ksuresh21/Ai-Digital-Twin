@@ -305,8 +305,12 @@ function applyState(data) {
   const s = data.settings;
 
   $("her-name").textContent = s.name;
-  $("brain-line").textContent =
-    `${data.brain.name}${data.brain.model ? " · " + data.brain.model : ""}`;
+  // Pack as well as brain: with packs coming from two roots it is worth
+  // being able to see at a glance which character is actually loaded.
+  $("brain-line").textContent = [
+    data.sprite.pack,
+    data.brain.name + (data.brain.model ? " " + data.brain.model : ""),
+  ].join(" · ");
 
   // Voice
   $("voice-enabled").checked = s.voice.enabled;
@@ -353,9 +357,14 @@ function applyState(data) {
     (p) => `<option${p === s.character_pack ? " selected" : ""}>${p}</option>`
   ).join("");
 
-  const missing = data.sprite.missing || [];
-  $("pack-warning").textContent = missing.length
-    ? `This pack has no frames for: ${missing.join(", ")}. Those fall back to idle.`
+  // Say what is actually playing, not just what is absent. "No Thinking
+  // frames" leaves you wondering what you are looking at; "Thinking → Focus"
+  // tells you, and tells you the pack is being used well.
+  const swaps = Object.entries(data.sprite.substitutions || {});
+  $("pack-warning").textContent = swaps.length
+    ? `${data.sprite.pack} has no frames for ${swaps.length} clip${
+        swaps.length === 1 ? "" : "s"}, so it uses the nearest pose: ${
+        swaps.map(([want, got]) => `${want} → ${got}`).join(", ")}.`
     : "";
 
   // Once per distinct message. applyState runs after every settings change,

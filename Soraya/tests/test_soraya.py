@@ -26,7 +26,9 @@ from soraya.brain.echo import EchoBrain
 from soraya.companion import Companion, _first_json_array, _first_json_object
 from soraya.config import QuietHours, Settings, VoiceSettings, in_quiet_hours
 from soraya.memory import Memory, Turn
-from soraya.presence.sprite import CLIPS, Sprite, clip_for
+from soraya.presence.sprite import (
+    CLIPS, FALLBACKS, Sprite, available_packs, clip_for, find_pack,
+)
 from soraya.voice.base import speech_text
 from soraya.voice.wake import WakeMatcher
 
@@ -503,6 +505,61 @@ class TestSprite:
         (folder / "idle_1.png").write_bytes(b"")
         (folder / ".DS_Store.png").write_bytes(b"")
         assert len(Sprite(home).frames("idle")) == 1
+
+    def test_the_swift_apps_own_packs_are_visible_here(self):
+        # "One set of art, two consumers" is the claim in ARCHITECTURE.md. It
+        # is only true if this actually finds AiTwin/Resources/Characters.
+        names = {name for name, _ in available_packs()}
+        if not names - {"Soraya"}:
+            pytest.skip("AiTwin character folders not present")
+        assert find_pack("Nish") is not None
+
+    def test_a_pack_from_the_swift_app_covers_every_clip_via_fallbacks(self):
+        found = find_pack("Nish")
+        if found is None:
+            pytest.skip("Nish pack not present")
+        sprite = Sprite(found)
+        # It genuinely lacks the four conversational clips...
+        assert set(sprite.missing_clips()) == {
+            "talking", "listening", "thinking", "greeting"
+        }
+        # ...but every clip the interface can ask for still has frames.
+        assert set(sprite.manifest()) == set(CLIPS)
+        # And the substitutes are the good ones, not a blanket idle: her real
+        # wave for a greeting, her reading pose for thinking.
+        swaps = sprite.substitutions()
+        assert swaps["greeting"] == "wave"
+        assert swaps["thinking"] == "focus"
+
+    def test_a_pack_name_cannot_address_anything_outside_a_root(self):
+        # Pack names arrive from settings files and from the browser.
+        for hostile in ("../../etc", "a/b", "..", ".hidden", "", "/etc"):
+            assert find_pack(hostile) is None
+
+    def test_a_missing_pack_falls_back_to_one_with_every_clip(self, home: Path,
+                                                              monkeypatch):
+        monkeypatch.setenv("SORAYA_BRAIN", "echo")
+        settings = Settings()
+        settings.character_pack = "APackThatDoesNotExist"
+        sprite = Companion(settings, home).sprite
+        # Never an empty box, and never a pack with holes in it if one without
+        # holes is available.
+        assert sprite.manifest()
+
+    def test_every_fallback_names_a_real_clip(self):
+        # A typo here would send the browser looking for frames of a clip that
+        # does not exist, and she would freeze on the wrong pose.
+        for clip, chain in FALLBACKS.items():
+            assert clip in CLIPS, clip
+            for substitute in chain:
+                assert substitute in CLIPS, f"{clip} -> {substitute}"
+
+    def test_no_fallback_chain_loops_back_on_itself(self):
+        # `cheer -> happy` and `happy -> cheer` both exist, which is fine
+        # because resolve() walks a list rather than recursing -- but a chain
+        # that contains its own clip would waste the first lookup every time.
+        for clip, chain in FALLBACKS.items():
+            assert clip not in chain, clip
 
     def test_the_pose_follows_the_moment_not_only_the_mood(self):
         # She should not look concerned before she has heard you.

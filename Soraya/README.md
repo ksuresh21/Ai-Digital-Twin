@@ -121,14 +121,28 @@ anything.
 
 ## Replacing the character
 
-`assets/characters/Soraya/` holds 68 placeholder frames across 16 clips. They
-are deliberately crude — they exist so every clip has frames and the folder
-layout is obvious.
+**She uses your real character by default.** Packs are looked up across two
+places, in order:
 
-Drop your own PNGs in with the same names. The folder names are **the same ones
-the Swift app already uses** (`Idle`, `Walking`, `Waving`, `Concerned`,
-`Cheer`…), so a pack drawn for one works in the other. Four are new for this
-phase: `Talking`, `Listening`, `Thinking`, `Greeting`.
+1. `Soraya/assets/characters/` — this folder's own packs
+2. `AiTwin/Resources/Characters/` — the Swift app's packs, **read in place**
+
+So `Nish` is the default and nothing was copied. One set of art, two consumers,
+which is the whole reason the folder names match. Set `SORAYA_PACKS` to add
+more roots.
+
+The AiTwin packs predate the conversational clips, so they have no `Talking`,
+`Listening`, `Thinking` or `Greeting`. Rather than freezing her on `idle` for a
+whole conversation, each clip has a fallback chain — `greeting` plays her real
+Waving frames, `thinking` plays Focus, which is her reading pose. The interface
+says which substitutions are in effect rather than leaving you guessing.
+
+`assets/characters/Soraya/` also holds 68 placeholder frames across 16 clips.
+They are deliberately crude, they cover every clip including the four new ones,
+and they are the fallback if a configured pack goes missing.
+
+Drop your own PNGs in with the same names. Four folders are new for this phase:
+`Talking`, `Listening`, `Thinking`, `Greeting`.
 
 **The one rule that matters:** keep the feet at the same height in every frame
 of every clip. If the feet move between clips, she appears to hop when the clip

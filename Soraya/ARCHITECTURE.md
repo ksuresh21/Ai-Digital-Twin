@@ -142,14 +142,21 @@ Frames live in `<root>/<Pack>/<Clip>/<prefix>_NN.png`, with clip names and
 folders from `presence/sprite.py` — the same ones
 `AiTwin/Sources/AiTwinCore/ClipName.swift` already uses.
 
-`PACK_ROOTS` is what makes "one set of art, two consumers" real rather than
-aspirational: it lists this folder's `assets/characters/` *and* the Swift app's
-`Resources/Characters/`, searched in order, first match winning. The Swift
-app's packs are read in place — copying them would mean 11MB duplicated and two
-folders to keep in step. `find_pack` rejects any name containing a path
-separator, because pack names arrive from settings files and from the browser,
-and `/art/` resolves the pack first and then checks containment against *that*
-pack's directory rather than one fixed root.
+`PACK_ROOTS` lists this folder's `assets/characters/` *and* the Swift app's
+`Resources/Characters/`, searched in order, first match winning. `find_pack`
+rejects any name containing a path separator, because pack names arrive from
+settings files and from the browser, and `/art/` resolves the pack first and
+then checks containment against *that* pack's directory rather than one fixed
+root.
+
+The shipped `Soraya` pack is a **copy** of the Nish artwork rather than a
+reference to it, and that is a deliberate trade: 6.6MB in the repo, bought so
+this folder stands alone. Reading the Swift app's packs in place costs nothing
+and duplicates nothing, but it makes `Soraya/` depend on a sibling directory —
+and "a separate folder altogether" was the requirement this project started
+from. `scripts/import_pack.py` re-runs the copy, verifying every new frame is
+readable *before* removing anything it replaced, so a failure halfway through
+leaves the old art rather than neither.
 
 Because those packs predate the conversational clips, `FALLBACKS` gives each
 clip a chain rather than collapsing everything to `idle`. Blanket-idle was the

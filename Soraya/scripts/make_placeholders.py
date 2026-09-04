@@ -11,12 +11,20 @@ the one property that actually matters when you swap in your own art: if the
 feet move between clips, she appears to hop when the clip changes. See
 ARCHITECTURE.md § The art contract.
 
-    python3 scripts/make_placeholders.py            # write the Soraya pack
-    python3 scripts/make_placeholders.py --force    # overwrite existing frames
+    python3 scripts/make_placeholders.py            # writes the Placeholder pack
+    python3 scripts/make_placeholders.py --force    # overwrite its frames
 
-`--force` never runs by default: the whole point of these files is to be
-replaced by real ones, and a script that silently overwrites hand-made art is
-a script that eventually destroys hand-made art.
+Two guards, because this script writes image files in bulk:
+
+`--force` never runs by default. The whole point of these files is to be
+replaced by real ones, and a script that silently overwrites hand-made art is a
+script that eventually destroys hand-made art.
+
+The default pack is `Placeholder`, not `Soraya`. It used to be `Soraya`, which
+was harmless while that pack *was* the placeholders — and became a loaded gun
+the moment real art was imported into it, because `--force` would then have
+overwritten the real frames with stick figures. Even so, `--force` refuses to
+touch a pack whose frames are not placeholder-shaped; see `looks_like_real_art`.
 """
 
 from __future__ import annotations
@@ -194,14 +202,38 @@ def draw_frame(motion: str, index: int, total: int) -> Image.Image:
     return small.resize((W, H), Image.NEAREST)
 
 
+def looks_like_real_art(root: Path) -> bool:
+    """Whether a pack holds frames this script did not draw.
+
+    Judged by canvas size, which is a reliable tell: everything here is drawn
+    at exactly W x H, so anything else came from somewhere else. Cheap, and it
+    fails safe — an unreadable file counts as real art rather than as fair game.
+    """
+    for path in root.rglob("*.png"):
+        try:
+            with Image.open(path) as image:
+                if image.size != (W, H):
+                    return True
+        except OSError:
+            return True
+    return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--pack", default="Soraya")
+    parser.add_argument("--pack", default="Placeholder")
     parser.add_argument("--force", action="store_true",
                         help="overwrite frames that already exist")
     args = parser.parse_args()
 
     root = ROOT / "assets" / "characters" / args.pack
+
+    if args.force and looks_like_real_art(root):
+        print(f"  ✗ {args.pack} contains frames that are not placeholders "
+              f"(wrong canvas size for this script's output).")
+        print("    Refusing to overwrite them. Use --pack with another name.")
+        return 1
+
     written = skipped = 0
 
     for clip, (count, motion) in PLAN.items():

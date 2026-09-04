@@ -92,9 +92,9 @@ class Companion:
         beats rendering an empty box, and the interface reports which pack it
         actually used.
         """
-        # "Soraya" second on purpose: the placeholder pack is the only one
-        # guaranteed to have frames for all sixteen clips, so it is a better
-        # fallback than whichever pack happens to sort first.
+        # "Soraya" second on purpose: it is the pack that ships with this
+        # folder, so it is a better fallback than whichever pack happens to
+        # sort first in whatever roots exist on this machine.
         for name in (self.settings.character_pack, "Soraya"):
             found = find_pack(name)
             if found is not None:

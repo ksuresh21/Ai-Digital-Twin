@@ -146,6 +146,21 @@ class TestFastRead:
         assert affect.label == label
         assert (affect.valence < 0) is negative
 
+    @pytest.mark.parametrize("message", [
+        "honestly I am wrecked, nothing is working",
+        "completely knackered",
+        "nothing works today",
+        "I am so sick of this",
+        "everything is falling apart",
+    ])
+    def test_how_people_actually_phrase_a_bad_day(self, message):
+        # These all read as neutral until the lists were extended. In offline
+        # mode the fast pass is the only read, so a miss here means she answers
+        # a bad evening with small talk.
+        affect = emotion.read_fast(message)
+        assert affect.valence < 0, message
+        assert emotion.posture_for(affect).posture in ("ground", "support")
+
     def test_hot_and_flat_are_told_apart(self):
         # The whole reason for two axes: both are negative, and they want
         # opposite responses from her.
@@ -477,11 +492,27 @@ class TestSpeechText:
 
 
 class TestSprite:
-    def test_the_placeholder_pack_has_every_clip(self):
+    def test_the_shipped_pack_can_play_every_clip(self):
+        # It does not *contain* every clip — the imported artwork predates the
+        # four conversational ones — but the interface can ask for any of the
+        # sixteen and always get frames back.
         pack = Path(__file__).resolve().parent.parent / "assets" / "characters" / "Soraya"
         if not pack.is_dir():
-            pytest.skip("placeholders not generated")
-        assert Sprite(pack).missing_clips() == []
+            pytest.skip("no shipped pack")
+        sprite = Sprite(pack)
+        assert set(sprite.manifest()) == set(CLIPS)
+        assert sprite.frames("idle"), "a pack with no idle frames has nothing to fall back to"
+
+    def test_the_shipped_pack_is_the_real_artwork_not_placeholders(self):
+        # The placeholders were drawn on a 232x368 canvas; the real art is
+        # 466x744. If this ever fails, an import went wrong or the generator
+        # overwrote the pack.
+        pack = Path(__file__).resolve().parent.parent / "assets" / "characters" / "Soraya"
+        if not pack.is_dir():
+            pytest.skip("no shipped pack")
+        frames = Sprite(pack).frames("idle")
+        assert frames
+        assert all(frame.stat().st_size > 20_000 for frame in frames)
 
     def test_frames_are_ordered_numerically_not_lexically(self, home: Path):
         # Lexical sort puts frame 10 before frame 2, which looks like bad

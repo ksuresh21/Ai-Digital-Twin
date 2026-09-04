@@ -121,28 +121,39 @@ anything.
 
 ## Replacing the character
 
-**She uses your real character by default.** Packs are looked up across two
-places, in order:
+**The real artwork ships in this folder.** `assets/characters/Soraya/` holds
+the Nish frames, imported from `AiTwin/Resources/Characters/Nish` so that
+`Soraya/` works on its own — move it, zip it, put it on another machine, and she
+still looks like herself with no Swift app beside her.
+
+Re-import after changing the art over there:
+
+```bash
+python3 scripts/import_pack.py --from Nish --to Soraya --replace
+```
+
+Packs are still *looked up* across two roots, so nothing stops you pointing at
+one where it sits:
 
 1. `Soraya/assets/characters/` — this folder's own packs
-2. `AiTwin/Resources/Characters/` — the Swift app's packs, **read in place**
+2. `AiTwin/Resources/Characters/` — the Swift app's packs, read in place
 
-So `Nish` is the default and nothing was copied. One set of art, two consumers,
-which is the whole reason the folder names match. Set `SORAYA_PACKS` to add
-more roots.
+`SORAYA_PACKS` adds more roots.
 
-The AiTwin packs predate the conversational clips, so they have no `Talking`,
-`Listening`, `Thinking` or `Greeting`. Rather than freezing her on `idle` for a
-whole conversation, each clip has a fallback chain — `greeting` plays her real
-Waving frames, `thinking` plays Focus, which is her reading pose. The interface
-says which substitutions are in effect rather than leaving you guessing.
+**Four clips are deliberately absent:** `Talking`, `Listening`, `Thinking`,
+`Greeting`. The artwork predates them. Rather than fill those folders with
+copies of other clips under a second name, each clip has a fallback chain —
+`greeting` plays her real Waving frames and `thinking` plays Focus, her reading
+pose — and the interface says which substitutions are in effect. Drawing two
+mouth-open frames for `Talking` and a head-tilt for `Listening` is the only
+thing that would improve the pack.
 
-`assets/characters/Soraya/` also holds 68 placeholder frames across 16 clips.
-They are deliberately crude, they cover every clip including the four new ones,
-and they are the fallback if a configured pack goes missing.
+The stick-figure placeholders are still generated on demand, under their own
+name so they can never be mistaken for the real art:
 
-Drop your own PNGs in with the same names. Four folders are new for this phase:
-`Talking`, `Listening`, `Thinking`, `Greeting`.
+```bash
+python3 scripts/make_placeholders.py     # writes a "Placeholder" pack
+```
 
 **The one rule that matters:** keep the feet at the same height in every frame
 of every clip. If the feet move between clips, she appears to hop when the clip

@@ -6,6 +6,13 @@ Two passes, on purpose:
 every message so the sprite and her voice can react *before* the model has
 finished thinking. Crude but honest about being crude.
 
+The word lists are the crude part, and they are the thing to extend when she
+misreads something in offline mode. "I am wrecked, nothing is working" read as
+neutral until both of those phrasings were added — which mattered because with
+no model configured the fast pass is the *only* read, so she answered a bad
+evening with small talk. With a model configured this is a half-second cosmetic
+issue at worst; the considered pass gets it right either way.
+
 **Considered pass** (`Affect.from_model`) — the model's own structured read,
 which is far better at sarcasm, understatement and "I'm fine". Replaces the
 fast read when it lands.
@@ -115,11 +122,19 @@ _LOW_HOT = (
     "angry", "furious", "pissed", "fed up", "hate", "annoying", "frustrated",
     "frustrating", "stressed", "stressing", "panic", "panicking", "deadline",
     "overwhelmed", "too much", "can't cope", "cant cope", "urgent",
+    # How people actually report things going wrong.
+    "nothing works", "nothing is working", "not working", "broken",
+    "sick of", "falling apart", "went wrong", "keeps failing",
 )
 _LOW_FLAT = (
     "tired", "exhausted", "drained", "sleepy", "burnt out", "burned out",
     "bored", "boring", "meh", "empty", "numb", "lonely", "alone", "sad",
     "down", "low", "stuck", "pointless", "give up", "giving up",
+    # Informal exhaustion. "wrecked" was the one that exposed the gap: it is
+    # about as common as "exhausted" in speech and was read as neutral, so in
+    # offline mode she answered a bad evening with small talk.
+    "wrecked", "knackered", "shattered", "wiped out", "worn out", "spent",
+    "can't be bothered", "cant be bothered", "no energy",
 )
 _HIGH_GOOD = (
     "shipped", "finished", "done it", "works", "worked", "fixed", "passed",
